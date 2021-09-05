@@ -61,5 +61,5 @@ end
 filename = 'threehop_dataset_'+sprintf("%s",SIM_NUM)+'_'+strrep(strrep(strrep(datestr(clock),' ','_'),':','_'),'-','_')+'.mat';
 
 save('saves/'+filename,'sim_name','sim_vars','stop_time','initial_transient_proportion',  ...
-            'records','numSims','SIM_NUM','NUM_WORKERS','-v7.3');
+            'records','numSims','SIM_NUM','NUM_WORKERS','seedsOffsets','-v7.3');
 
