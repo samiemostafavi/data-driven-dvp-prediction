@@ -47,6 +47,11 @@ clear 'simIn' 'simOut' 'idx' 'n';
 
 %% Save all usefull data to a file
 
+% create the folder if does not exist
+if not(isfolder('saves/'))
+    mkdir('saves/');
+end
+
 filename = 'threehop_records_'+sprintf("%s",SIM_NUM)+'.mat';
 
 save('saves/'+filename,'sim_name','sim_vars','stop_time','initial_transient_proportion',  ...
