@@ -1,0 +1,19 @@
+# misc files
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+**/slprj/
+**/saves/
+*.asv
+*.pkl
+*.fig
+*.mat
+*.slxc
+
+
+# C extensions
+*.so
