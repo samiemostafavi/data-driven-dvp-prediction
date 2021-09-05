@@ -1,5 +1,6 @@
 %% Prep the queues
 
+% format shortG
 restoredefaultpath
 
 clear all;
