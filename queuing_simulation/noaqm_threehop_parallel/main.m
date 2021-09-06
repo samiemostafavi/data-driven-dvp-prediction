@@ -43,23 +43,27 @@ parpool('local',NUM_WORKERS);   % start a new one
 
 % Simulate the model
 simOut = parsim(simIn,'UseFastRestart','on'); % ,'ShowProgress', 'on', 'ShowSimulationManager','on'
-records = [];
+recordsTable = table;
 for n = 1:numSims
-    records = [records; logs2record(simOut(n).logsout,initial_transient_proportion)];
+    recordsTable = [recordsTable; logs2table(simOut(n).logsout,initial_transient_proportion)];
 end
 toc
 
 clear 'simIn' 'simOut' 'idx' 'n';
 
-%% Save all usefull data to a file
+%% Save all usefull data to 2 files: a .mat and a .parquet
 
 % create the folder if does not exist
 if not(isfolder('saves/'))
     mkdir('saves/');
 end
 
-filename = 'threehop_dataset_'+sprintf("%s",SIM_NUM)+'_'+strrep(strrep(strrep(datestr(clock),' ','_'),':','_'),'-','_')+'.mat';
+cl_str = strrep(strrep(strrep(datestr(clock),' ','_'),':','_'),'-','_');
+filename_meta = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_metadata'+'_'+cl_str;
+filename_dataset = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_dataset'+'_'+cl_str;
 
-save('saves/'+filename,'sim_name','sim_vars','stop_time','initial_transient_proportion',  ...
-            'records','numSims','SIM_NUM','NUM_WORKERS','seedsOffsets','-v7.3');
+save('saves/'+filename_meta+'.mat','sim_name','sim_vars','stop_time','initial_transient_proportion',  ...
+            'numSims','SIM_NUM','NUM_WORKERS','seedsOffsets');
+        
+parquetwrite('saves/'+filename_dataset+'.parquet',recordsTable);
 

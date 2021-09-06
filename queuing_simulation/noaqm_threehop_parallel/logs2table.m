@@ -1,4 +1,4 @@
-function records = logs2record(logsout,transient_prop)
+function records = logs2table(logsout,transient_prop)
 
     % Get the data
 
@@ -84,6 +84,13 @@ function records = logs2record(logsout,transient_prop)
                                                                                         h3_downlink_queuen+h3_downlink_servern ];    %16
 
     % remove the initial transient samples   
-    records = records(transient_prop*size(records,1)+1:end,:);                                                                                
+    records = records(transient_prop*size(records,1)+1:end,:);
+    
+    recordsTable = array2table(records,'VariableNames',{'end2enddelay', ...
+                                                        'queuedelay_uplink','servicedelay_uplink','totaldelay_uplink','queuedelay_compute','servicedelay_compute','totaldelay_compute','queuedelay_downlink','servicedelay_downlink','totaldelay_downlink', ...
+                                                        'h1_uplink_netstate','h1_compute_netstate','h1_downlink_netstate',...
+                                                                             'h2_compute_netstate','h2_downlink_netstate',...
+                                                                                                   'h3_downlink_netstate'});
+    
 end
 
