@@ -1,3 +1,5 @@
+records = table2array(recordsTable);
+
 datasetBU = records2datasetBU(records);
 [C,ia,ic] = unique(datasetBU(:,2:4),'rows');
 value_counts = [C,accumarray(ic,1)];
