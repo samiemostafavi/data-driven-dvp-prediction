@@ -1,4 +1,4 @@
-function records = logs2table(logsout,transient_prop)
+function recordsTable = logs2table(logsout,transient_prop)
 
     % Get the data
 

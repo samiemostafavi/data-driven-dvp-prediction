@@ -23,7 +23,7 @@ sim_vars = [ 0, 0.9  ...                % (1)  arrivalfunction          (2)  arr
 
 tic
 
-stop_time = '12222'; %'50000',ml2,arrival 0.8 -> 292 sec, not that accurate
+stop_time = '6222'; %'50000',ml2,arrival 0.8 -> 292 sec, not that accurate
 
 numSims = 2;
 simIn(1:numSims) = Simulink.SimulationInput(sim_name);
