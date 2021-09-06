@@ -58,12 +58,12 @@ if not(isfolder('saves/'))
     mkdir('saves/');
 end
 
-cl_str = strrep(strrep(strrep(datestr(clock),' ','_'),':','_'),'-','_');
-filename_meta = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_metadata'+'_'+cl_str;
-filename_dataset = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_dataset'+'_'+cl_str;
+clk_str = strrep(strrep(strrep(datestr(clock),' ','_'),':','_'),'-','_');
+filename_meta = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_metadata'+'_'+clk_str;
+filename_dataset = 'sim3hop_'+sprintf("%s",SIM_NUM)+'_dataset'+'_'+clk_str;
 
 save('saves/'+filename_meta+'.mat','sim_name','sim_vars','stop_time','initial_transient_proportion',  ...
-            'numSims','SIM_NUM','NUM_WORKERS','seedsOffsets');
+            'numSims','SIM_NUM','NUM_WORKERS','clk_str','seedsOffsets');
         
 parquetwrite('saves/'+filename_dataset+'.parquet',recordsTable);
 
