@@ -313,7 +313,7 @@ def evaluate_models_save_plots(models,model_names,train_data,cond_state=[0,1,7],
         model_means.append(np.sum(x*np.squeeze(prob)*width))
         #print("emm mean: " + str(np.sum(x*np.squeeze(prob_emm)*width)))
 
-    ax.set_xlim([0, 15])
+    #ax.set_xlim([xlim[0], xlim[1]])
     ax.set_xlabel('Latency')
     #ax.set_xticks([5,6,7,8,9,10])
     #ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -371,7 +371,8 @@ def evaluate_models_save_plots(models,model_names,train_data,cond_state=[0,1,7],
         model_tails.append(tail)
 
     ax.set_ylim([1e-8, 1])
-    ax.set_xticks([6,10,15,20])
+    #ax.set_xticks([6,10,15,20])
+    ax.set_xticks(range(math.ceil(xlim[2]),math.floor(xlim[3])+1,3))
     ax.get_xaxis().set_major_formatter(mticker.ScalarFormatter())
     ax.get_xaxis().set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel('Latency [log]')

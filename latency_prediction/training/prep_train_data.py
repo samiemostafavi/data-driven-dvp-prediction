@@ -27,7 +27,7 @@ os.makedirs(dirname, exist_ok=True)
 """ training data """
 
 # new file:
-file_addr = '../data/sim3hop_1_dataset_06_Sep_2021_11_20_40.parquet'
+file_addr = ['../data/sim3hop_1_dataset_06_Sep_2021_11_20_40.parquet']
 batch_size = 5000
 n_replicas = 10
 
@@ -35,7 +35,7 @@ n_replicas = 10
 """ import and create the train dataset into Numpy array """
 predictor_num = 1
 FILE_NAME = 'traindata_p'+str(predictor_num)+'_'+str(int(batch_size/1000))+'k.npz'
-training_dataset = ParquetDataset(file_address=file_addr,predictor_num=predictor_num)
+training_dataset = ParquetDataset(file_addresses=file_addr,predictor_num=predictor_num)
 train_data = training_dataset.get_data(batch_size,n_replicas)
 ndim_x = len(train_data[0])-1
 #print(np.shape(train_data))
@@ -47,7 +47,7 @@ print('Predictor-%d dataset loaded from ' % predictor_num, file_addr,' and saved
 """ import and create the train dataset into Numpy array  """
 predictor_num = 2
 FILE_NAME = 'traindata_p'+str(predictor_num)+'_'+str(int(batch_size/1000))+'k.npz'
-training_dataset = ParquetDataset(file_address=file_addr,predictor_num=predictor_num)
+training_dataset = ParquetDataset(file_addresses=file_addr,predictor_num=predictor_num)
 train_data = training_dataset.get_data(batch_size,n_replicas)
 ndim_x = len(train_data[0])-1
 #print(np.shape(train_data))
@@ -59,7 +59,7 @@ print('Predictor-%d dataset loaded from ' % predictor_num, file_addr,' and saved
 """ import and create the train dataset into Numpy array """
 predictor_num = 3
 FILE_NAME = 'traindata_p'+str(predictor_num)+'_'+str(int(batch_size/1000))+'k.npz'
-training_dataset = ParquetDataset(file_address=file_addr,predictor_num=predictor_num)
+training_dataset = ParquetDataset(file_addresses=file_addr,predictor_num=predictor_num)
 train_data = training_dataset.get_data(batch_size,n_replicas)
 ndim_x = len(train_data[0])-1
 #print(np.shape(train_data))
