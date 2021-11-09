@@ -1,5 +1,11 @@
 # Data-Driven End-to-End Delay Violation Probability Prediction with Extreme Value Mixture Models
 
+In this work, we have implemented a novel conditional density estimation method that uses extreme value mixture model as the parametric density function of the mixture density network (MDN). We use this novel density estimator to predict the transient delay violation probability (DVP) of the packets traversing a tandem queueing network from the queues lengths.
+Numerically, we showed in the paper that our proposed approach outperforms state-of-the-art Gaussian mixture model-based predictors by orders of magnitude, in particular for quantiles above 0.99.
+
+This repository contains the implementation of the aformentioned system. First, we simulate a 3-hop tandem queuing system in MATLAB Simulink environment and record the end-to-end delays together with the observed queue lengths. Then, these records are used as the training or evaluation dataset for the latency predictor in Python using Tensorflow.
+
+
 ## Description
 
 ### Latency Prediction (`latency_prediction` folder):
