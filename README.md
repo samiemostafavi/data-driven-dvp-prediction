@@ -20,7 +20,7 @@ This implementation is based on the repository [here](https://github.com/freelun
 
 Implementation of a 3 hop tandem queuing network in MATLAB Simulink using SimEvents toolbox.
 
-To use the code and design, open the `queueing_simulation` folder using MATLAB r2020b.
+To use the code and design, open the `queueing_simulation/noaqm_threehop_parallel` folder using MATLAB r2020b.
 
 
 ## Paper
