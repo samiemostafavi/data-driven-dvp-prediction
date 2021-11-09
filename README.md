@@ -4,7 +4,7 @@
 
 ### Latency Prediction (`latency_prediction` folder):
 
-Implementation of two conditional density estimation methods with parametric neural networks:
+Implementation of two conditional density estimation methods with parametric neural networks in Python:
 
 * Conventional Mixture Density Network with Gaussian Mixture Model (GMM)
 * Novel Mixture Density Network with Gaussian and Extreme Value Mixture Model (EMM)
