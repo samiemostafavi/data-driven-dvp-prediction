@@ -20,7 +20,7 @@ To use the library, clone the GitHub repository and run
 ```bash
 pip install .
 ``` 
-Note that the package only supports tensorflow versions between 1.4 and 1.7, and MATLAB r2020b.
+Note that the package only supports tensorflow version 1.7 and MATLAB r2020b.
 
 ## Paper
 This repository contains the implementation of the paper [here](https://arxiv.org/abs/1903.00954).
