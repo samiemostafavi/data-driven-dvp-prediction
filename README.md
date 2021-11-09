@@ -4,11 +4,12 @@
 
 ### Latency Prediction (`latency_prediction` folder):
 
-Implementation of various mixture density network methods to predict the end-to-end delay of a tandem queuing network. We use conditional density estimation with parametric neural networks.
+Implementation of two conditional density estimation methods with parametric neural networks:
 
-* **Parametric neural network based predictors**
-    * Mixture Density Network with Gaussian Mixture Model only (GMM)
-    * Mixture Density Network with Gaussian and Extreme Value Mixture Model (EMM)
+* Conventional Mixture Density Network with Gaussian Mixture Model (GMM)
+* Novel Mixture Density Network with Gaussian and Extreme Value Mixture Model (EMM)
+
+Based on the repository [here](https://github.com/freelunchtheorem/Conditional_Density_Estimation).
 
 ### Queuing Simulation (`queueing_simulation` folder):
 
