@@ -37,11 +37,16 @@ This repository contains the models, evaluation schemes, and numerics of the fol
 If you use our extreme value theory-based predictor in your research, you can cite it as follows:
 
 ```
-@article{,
-  title={},
-  author={},
-  journal={},
-  year={}
+
+@INPROCEEDINGS{9708928,
+  author={Mostafavi, Seyed Samie and Dán, György and Gross, James},
+  booktitle={2021 IEEE/ACM Symposium on Edge Computing (SEC)}, 
+  title={Data-Driven End-to-End Delay Violation Probability Prediction with Extreme Value Mixture Models}, 
+  year={2021},
+  volume={},
+  number={},
+  pages={416-422},
+  doi={10.1145/3453142.3493506}
 }
 
 ```
