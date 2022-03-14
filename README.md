@@ -30,7 +30,7 @@ To use the code and design, open the `queueing_simulation/noaqm_threehop_paralle
 
 
 ## Paper
-This repository contains the models, evaluation schemes, and numerics of the following paper: ***Data-Driven End-to-End Delay Violation Probability Prediction with Extreme Value Mixture Models*** published by The Sixth ACM/IEEE Symposium on Edge Computing (SEC) in San Jose, CA, December 14-17, 2021 [here](https://google.com).
+This repository contains the models, evaluation schemes, and numerics of the following paper: ***Data-Driven End-to-End Delay Violation Probability Prediction with Extreme Value Mixture Models*** published by The Sixth ACM/IEEE Symposium on Edge Computing (SEC) in San Jose, CA, December 14-17, 2021 [here](https://ieeexplore.ieee.org/document/9708928).
 
 
 ## Citing
