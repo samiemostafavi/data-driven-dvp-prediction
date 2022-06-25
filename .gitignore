@@ -130,6 +130,7 @@ dmypy.json
 
 
 # Custom
+.DS_Store
 *.parquet
 *.png
 *.jpg
