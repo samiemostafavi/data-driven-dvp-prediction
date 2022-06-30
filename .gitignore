@@ -130,6 +130,7 @@ dmypy.json
 
 
 # Custom
+sparkcache/
 .DS_Store
 *.parquet
 *.png

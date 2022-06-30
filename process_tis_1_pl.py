@@ -3,11 +3,38 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 from tensorflow import keras
-import tensorflow_io as tfio
+from pyspark.sql import SparkSession
+from petastorm import TransformSpec
+import os
+from os.path import dirname, abspath
+import tensorflow as tf
+from loguru import logger
+
+import warnings
+warnings.filterwarnings("ignore")
+
+
+from petastorm.spark import SparkDatasetConverter, make_spark_converter
+
+
+def init_spark():
+
+    spark = SparkSession.builder \
+       .appName("Training") \
+       .config("spark.driver.memory", "112g") \
+       .config("spark.driver.maxResultSize",0) \
+       .getOrCreate()
+
+    sc = spark.sparkContext
+    return spark,sc
+
+# init Spark
+spark,sc = init_spark()
 
 from pr3d.de import GammaEVM
-from dsio import load_parquet, parquet_tf_pipeline_unconditional_mutiple_file, parquet_tf_pipeline_unconditional_single_file2
-import os
+#from dsio import load_parquet, parquet_tf_pipeline_unconditional_mutiple_file, parquet_tf_pipeline_unconditional_single_file2
+
+# we use this https://databricks.com/blog/2020/06/16/simplify-data-conversion-from-apache-spark-to-tensorflow-and-pytorch.html
 
 
 dtype = 'float32' # 'float32' or 'float16'
@@ -20,43 +47,49 @@ for f in all_files:
     if f.endswith(".parquet"):
         files.append(results_path + raw_dfs_path + f)
 
-print(files)
+logger.info(f"Found these files at {results_path+raw_dfs_path}: {files}")
 
-dataset_size = 1024*90 # total will be the_number_of_files * file_samples_size
-train_size = 1024*80
+# read all files into Spark df
+df=spark.read.parquet(*files)
+
+dataset_size = 1024*120 # total will be the_number_of_files * file_samples_size
 batch_size = 1024
+df = df.limit(dataset_size)
+df_train, df_val = df.randomSplit([0.9, 0.1], seed=12345)
+# Make sure the number of partitions is at least the number of workers which is required for distributed training.
+NUM_WORKERS = 1
+df_train = df_train.repartition(NUM_WORKERS)
+df_val = df_val.repartition(NUM_WORKERS)
 
-# dataset pipeline
-#train_dataset = parquet_tf_pipeline_unconditional_mutiple_file(
-    #file_addrs = results_path + raw_dfs_path + "*.parquet",
-#    file_addrs = files,
-#    dummy_feature_name = "dummy_input",
-#    label_name = "service_delay",
-#    dataset_size = dataset_size,
-#    train_size = train_size,
-#    batch_size = batch_size,
-#)
+# Set a cache directory on DBFS FUSE for intermediate data.
+file_path = dirname(abspath(__file__))
+spark.conf.set(SparkDatasetConverter.PARENT_CACHE_DIR_URL_CONF, 'file://' + file_path + '/sparkcache')
+logger.info(f"The cache folder location: {'file://' + file_path + '/sparkcache'}")
 
-df = pd.read_parquet(files[0], engine='pyarrow')
-print(len(df))
+converter_train = make_spark_converter(df_train)
+converter_val = make_spark_converter(df_val)
 
-df_tfio = tfio.IODataset.from_parquet(filename = files[0])
-ds = df_tfio.take(len(df))
-print(df_tfio)
-i = 0
-for d in ds:
-    i = i + 1
-    print(i)
+logger.info(f"Parquet files loaded, train sampels: {len(converter_train)}, validation samples: {len(converter_val)}")
 
-exit(0)
+def transform_row(pd_batch):
+    """
+    The input and output of this function are pandas dataframes.
+    """
+    #print(pd_batch)
+    pd_batch = pd_batch[['service_delay']]
+    pd_batch['y_input'] = pd_batch['service_delay']
+    pd_batch['dummy_input'] = 0.00
+    pd_batch = pd_batch.drop(columns=['service_delay'])
+    #print(new_batch)
+    return pd_batch
 
-train_dataset = parquet_tf_pipeline_unconditional_single_file2(
-    file_addr = files[0],
-    dummy_feature_name = "dummy_input",
-    label_name = "service_delay",
-    dataset_size = dataset_size,
-    train_size = train_size,
-    batch_size = batch_size,
+# Note that the output shape of the `TransformSpec` is not automatically known by petastorm, 
+# so we need to specify the shape for new columns in `edit_fields` and specify the order of 
+# the output columns in `selected_fields`.
+transform_spec_fn = TransformSpec(
+  transform_row, 
+  edit_fields=[('y_input', np.float32, (), False), ('dummy_input', np.float32, (), False)],
+  selected_fields=['y_input', 'dummy_input']
 )
 
 # initiate the non conditional predictor
@@ -67,17 +100,40 @@ model = GammaEVM(
     #batch_size = 1024,
 )
 
-model.fit_pipeline(
-    train_dataset,
-    test_dataset=None,
-    optimizer = keras.optimizers.Adam(learning_rate=0.01),
-    batch_size = 1024,
-    epochs = 10, #1000
-)
+with converter_train.make_tf_dataset(
+    transform_spec=transform_spec_fn, 
+    batch_size=batch_size,
+) as train_dataset, \
+    converter_val.make_tf_dataset(
+    transform_spec=transform_spec_fn, 
+    batch_size=batch_size,
+) as val_dataset:
 
-exit(0)
+    # tf.keras only accept tuples, not namedtuples
+    train_dataset = train_dataset.map(lambda x: ({'y_input':x.y_input, 'dummy_input':x.dummy_input},x.y_input))
+    steps_per_epoch = len(converter_train) // batch_size
 
-model.save(results_path+"service_delay_model.h5")
+    val_dataset = val_dataset.map(lambda x: ({'y_input':x.y_input, 'dummy_input':x.dummy_input},x.y_input))
+    validation_steps = max(1, len(converter_val) // batch_size)
 
-print(f"Model saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
-print(f"Parameters: {model.get_parameters()}")
+
+    model._pl_training_model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=0.01), 
+        loss=model.loss,
+    )
+
+    logger.info(f"steps_per_epoch: {steps_per_epoch}, validation_steps: {validation_steps}")
+
+    hist = model._pl_training_model.fit(
+        train_dataset, 
+        steps_per_epoch=steps_per_epoch,
+        epochs=100,
+        validation_data=val_dataset,
+        validation_steps=validation_steps,
+        verbose=2
+    )
+
+model.save(results_path+"service_delay_model_2.h5")
+
+logger.info(f"Model saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
+logger.info(f"Parameters: {model.get_parameters()}")
