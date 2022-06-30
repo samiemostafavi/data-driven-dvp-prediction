@@ -115,14 +115,23 @@ print(f"Conditions table: \n{conditions_table}")
 
 # figure out conditionals and quantiles
 quantiles_table = pd.DataFrame(columns = [str(q) for q in qrange_list])
+
+conditions_table['num_samples'] = 0
+
+print(f"Conditions table: \n{conditions_table}")
+
+
 for index, row in conditions_table.iterrows():
     print(f"-------- Calculating condition {index+1}/{len(conditions_table)}: {row.values}")
 
     cond_df = df.alias('cond_df')
     for key in row.keys():
-        cond_df = cond_df.where( df[key]>= row[key][0] ).where( df[key] < row[key][1] )
+        if key in conditions_conf.keys():
+            cond_df = cond_df.where( df[key]>= row[key][0] ).where( df[key] < row[key][1] )
 
     print(f"- Pyspark found {cond_df.count()} conditional samples")
+    conditions_table.at[index, 'num_samples'] = cond_df.count()
+
     res = cond_df.approxQuantile('end2end_delay',qrange_list,0)
     print(f"- Conditional quantiles: {res}")
     quantiles_table.loc[len(quantiles_table)] = list(res)

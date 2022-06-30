@@ -22,7 +22,7 @@ for f in all_files:
 df = load_parquet(file_addresses=files,read_columns=['service_delay'])
 
 model = GammaEVM(
-    h5_addr = results_path+"service_delay_model.h5"
+    h5_addr = results_path+"service_delay_model_pl.h5"
 )
 
 fig, ax = plt.subplots()
@@ -50,5 +50,5 @@ else:
 ax.legend(['Data', 'Prediction'])
 
 fig.tight_layout()
-plt.savefig(results_path+'service_delay_fit.png')
+plt.savefig(results_path+'service_delay_fit_pl.png')
 

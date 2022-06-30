@@ -1,21 +1,21 @@
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import pandas as pd
 from tensorflow import keras
+import tensorflow as tf
 from pyspark.sql import SparkSession
 from petastorm import TransformSpec
 import os
 from os.path import dirname, abspath
-import tensorflow as tf
 from loguru import logger
-
+from petastorm.spark import SparkDatasetConverter, make_spark_converter
+from pr3d.de import GammaEVM
 import warnings
 warnings.filterwarnings("ignore")
 
+# Based on this https://databricks.com/blog/2020/06/16/simplify-data-conversion-from-apache-spark-to-tensorflow-and-pytorch.html
 
-from petastorm.spark import SparkDatasetConverter, make_spark_converter
-
+"""
+The purpose of this script is to train a GammaEVM model over service_delays
+"""
 
 def init_spark():
 
@@ -31,13 +31,9 @@ def init_spark():
 # init Spark
 spark,sc = init_spark()
 
-from pr3d.de import GammaEVM
-#from dsio import load_parquet, parquet_tf_pipeline_unconditional_mutiple_file, parquet_tf_pipeline_unconditional_single_file2
-
-# we use this https://databricks.com/blog/2020/06/16/simplify-data-conversion-from-apache-spark-to-tensorflow-and-pytorch.html
-
-
-dtype = 'float32' # 'float32' or 'float16'
+npdtype = np.float64
+tfdtype = tf.float64
+strdtype = 'float64'
 
 results_path = 'results/'
 raw_dfs_path = 'raw_dfs/'
@@ -64,7 +60,7 @@ df_val = df_val.repartition(NUM_WORKERS)
 # Set a cache directory on DBFS FUSE for intermediate data.
 file_path = dirname(abspath(__file__))
 spark.conf.set(SparkDatasetConverter.PARENT_CACHE_DIR_URL_CONF, 'file://' + file_path + '/sparkcache')
-logger.info(f"The cache folder location: {'file://' + file_path + '/sparkcache'}")
+logger.info(f"Spark cache folder is set up at: {'file://' + file_path + '/sparkcache'}")
 
 converter_train = make_spark_converter(df_train)
 converter_val = make_spark_converter(df_val)
@@ -88,14 +84,14 @@ def transform_row(pd_batch):
 # the output columns in `selected_fields`.
 transform_spec_fn = TransformSpec(
   transform_row, 
-  edit_fields=[('y_input', np.float32, (), False), ('dummy_input', np.float32, (), False)],
+  edit_fields=[('y_input', npdtype, (), False), ('dummy_input', npdtype, (), False)],
   selected_fields=['y_input', 'dummy_input']
 )
 
 # initiate the non conditional predictor
 model = GammaEVM(
     #centers= 8,
-    dtype = dtype,
+    dtype = strdtype,
     bayesian = False,
     #batch_size = 1024,
 )
@@ -133,7 +129,7 @@ with converter_train.make_tf_dataset(
         verbose=2
     )
 
-model.save(results_path+"service_delay_model_2.h5")
+model.save(results_path+"service_delay_model_pl.h5")
 
 logger.info(f"Model saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
 logger.info(f"Parameters: {model.get_parameters()}")
