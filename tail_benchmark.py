@@ -39,6 +39,8 @@ def create_run_graph(params):
         dtype = np.float32,
     )
     # mean is 10.807
+
+    # get the function
     service = ht.get_rnd_heavy_tail
 
     # Create the QSimPy environment
@@ -153,7 +155,7 @@ def create_run_graph(params):
 if __name__ == "__main__":
 
     sequential_runs = 1 # 11
-    parallel_runs = 2 # 18
+    parallel_runs = 4 # 18
     for j in range(sequential_runs):
 
         processes = []
