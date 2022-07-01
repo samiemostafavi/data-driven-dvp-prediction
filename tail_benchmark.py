@@ -163,7 +163,7 @@ def create_run_graph(params):
 
 if __name__ == "__main__":
 
-    sequential_runs = 1 # 10
+    sequential_runs = 10 # 10
     parallel_runs = 18 # 18
     for j in range(sequential_runs):
 
@@ -174,9 +174,9 @@ if __name__ == "__main__":
                 'run_number' : j*parallel_runs + i,
                 'arrival_seed' : 100234+i*100101+j*10223,
                 'service_seed' : 120034+i*200202+j*20111,
-                'gpd_concentration' : 0.4,
-                'until': int(1000000), # 10M timesteps takes 1000 seconds, generates 900k samples
-                'report_state' : 0.1,
+                'gpd_concentration' : 0.4, #0.3, 0.2, 0.1, 0.001
+                'until': int(10000000), # 10M timesteps takes 1000 seconds, generates 900k samples
+                'report_state' : 0.1, # report when 10%, 20%, etc progress reaches
             }
             p = mp.Process(target=create_run_graph, args=(params,))
             p.start()
