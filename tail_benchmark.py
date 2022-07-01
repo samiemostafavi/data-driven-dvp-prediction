@@ -6,21 +6,25 @@ import multiprocessing as mp
 import time
 from pathlib import Path
 import os
+import polars as pl
 
 import qsimpy
 from arrivals import HeavyTail
 
 p = Path(__file__).parents[0]
-results_path = str(p) + '/results/'
+results_path = str(p) + '/results2/'
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 def create_run_graph(params):
     # params = {
+    #   'arrivals_number' : 1500000,
     #   'run_number' : 0,
     #   'arrival_seed' : 100234,
     #   'service_seed' : 120034,
     #   'gpd_concentration' : 0.4,
+    #   'until': int(1000000),
+    #   'report_state' : 0.1,
     # }
 
     # arrival function: Uniform
@@ -30,7 +34,7 @@ def create_run_graph(params):
 
     # Gamma distribution
     ht = HeavyTail(
-        n = 1000000,
+        n = params['arrivals_number'],
         seed = params['service_seed'],
         gamma_concentration = 5,
         gamma_rate = 0.5,
@@ -46,6 +50,14 @@ def create_run_graph(params):
     # Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
     env = qsimpy.Environment(name='0')
+
+    # report timesteps
+    def report_state(time_step):
+        yield env.timeout(time_step)
+        print(f"{params['run_number']}: Simulation progress {100.0*float(env.now)/float(params['until'])}% done")
+
+    for step in np.arange(0, params['until'], params['until']*params['report_state'], dtype=int):
+        env.process(report_state(step))
 
     # Create a source
     source = qsimpy.Source(
@@ -63,12 +75,31 @@ def create_run_graph(params):
         queue_limit=10,
     )
 
-    # a sink: to capture both finished tasks and dropped tasks
-    sink = qsimpy.Sink(
+    # a sink: to capture both finished tasks and dropped tasks (compare PolarSink vs Sink)
+    sink = qsimpy.PolarSink(
         name='sink',
         env=env,
         debug=False,
+        batch_size = 10000,
     )
+
+    # define postprocess function
+    def process_time_in_service(df):
+ 
+        df['end2end_delay'] = df['end_time']-df['start_time']
+        df['service_delay'] = df['end_time']-df['service_time']
+        df['queue_delay'] = df['service_time']-df['queue_time']
+
+        df['time_in_service'] = df.apply(
+                                lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
+                                axis=1,
+                            ).astype('float64')
+
+        del df['last_service_time'], df['queue_is_busy']
+
+        return df
+
+    sink.post_process_fn = process_time_in_service
 
     # Wire start-node, queue, end-node, and sink together
     source.out = queue
@@ -117,31 +148,10 @@ def create_run_graph(params):
     start = time.time()
 
     # Process the collected data
-    df = pd.DataFrame(sink.received_tasks)
-
-    df_dropped = df[df.end_time==-1]
-    df_finished = df[df.end_time>=0]
+    df = sink.received_tasks
+    df_dropped = df.filter(pl.col('end_time') == -1)
+    df_finished = df.filter(pl.col('end_time') >= 0)
     df = df_finished
-
-    df['end2end_delay'] = df['end_time']-df['start_time']
-    df['service_delay'] = df['end_time']-df['service_time']
-    df['queue_delay'] = df['service_time']-df['queue_time']
-    df['time_in_service'] = df.apply(
-                                lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
-                                axis=1,
-                            )
-
-    df.drop([
-            'end_time',
-            'start_time',
-            'last_service_time',
-            'queue_is_busy',
-            'service_time',
-            'queue_time',
-        ], 
-        axis = 1,
-        inplace = True,
-    )
 
     end = time.time()
 
@@ -153,23 +163,24 @@ def create_run_graph(params):
 
 if __name__ == "__main__":
 
-    sequential_runs = 11 # 11
+    sequential_runs = 1 # 10
     parallel_runs = 18 # 18
     for j in range(sequential_runs):
 
         processes = []
         for i in range(parallel_runs):
             params = {
+                'arrivals_number' : 1500000,
                 'run_number' : j*parallel_runs + i,
                 'arrival_seed' : 100234+i*100101+j*10223,
                 'service_seed' : 120034+i*200202+j*20111,
-                'until': 1.1*1000000,
                 'gpd_concentration' : 0.4,
+                'until': int(1000000), # 10M timesteps takes 1000 seconds, generates 900k samples
+                'report_state' : 0.1,
             }
             p = mp.Process(target=create_run_graph, args=(params,))
             p.start()
             processes.append(p)
-        
 
         try:
             for p in processes:
