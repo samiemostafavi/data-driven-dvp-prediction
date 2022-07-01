@@ -1,6 +1,4 @@
-import sys
 import functools
-import pandas as pd
 import numpy as np
 import multiprocessing as mp
 import time
@@ -12,7 +10,7 @@ import qsimpy
 from arrivals import HeavyTail
 
 p = Path(__file__).parents[0]
-results_path = str(p) + '/results2/'
+results_path = str(p) + '/results/raw_dfs'
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
