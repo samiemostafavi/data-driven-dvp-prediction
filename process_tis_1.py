@@ -18,7 +18,7 @@ for f in all_files:
     if f.endswith(".parquet"):
         files.append(results_path + raw_dfs_path + f)
 
-
+files = [files[0],files[1],files[2],files[3]]
 df = load_parquet(file_addresses=files,read_columns=['service_delay'])
 print(df)
 print(len(df))
@@ -43,7 +43,7 @@ training_samples_num = 1024*100
 model.fit(
     Y[0:training_samples_num],
     batch_size = 1024, # 1024 training_samples_num
-    epochs = 1000, # 5000
+    epochs = 200, # 1000, 5000
     optimizer = keras.optimizers.Adam(learning_rate=0.01),
 )
 

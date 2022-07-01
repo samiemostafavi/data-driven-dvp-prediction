@@ -16,7 +16,7 @@ all_files = os.listdir(results_path+raw_dfs_path)
 
 # load the fitted service delay model
 service_delay_model = GammaEVM(
-    h5_addr = results_path+"service_delay_model.h5",
+    h5_addr = results_path+"service_delay_model_pl.h5",
 )
 print("Service delay model is loaded. Parameters: {0}".format(service_delay_model.get_parameters()))
 
@@ -27,11 +27,13 @@ for f in all_files:
             file_addresses=[file_addr],
             read_columns=None,
         )
-
         # process the time_in_service and convert it to longer_delay_prob
         tis = np.squeeze(df[['time_in_service']].to_numpy())
         longer_delay_prob = np.float64(1.00)-service_delay_model.prob_batch(tis)[2]
+
         df['longer_delay_prob'] = longer_delay_prob
         # replace NaNs with zeros
         df['longer_delay_prob'] = df['longer_delay_prob'].fillna(np.float64(0.00))
         df.to_parquet(results_path + processed_dfs_path + f)
+
+        print(f"File {f} loaded with size {len(tis)}, processed and saved.")

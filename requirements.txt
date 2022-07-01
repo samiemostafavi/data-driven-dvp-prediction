@@ -18,6 +18,10 @@ tensorflow-addons==0.16.1
 tensorflow_io==0.25.0
 git+https://github.com/samiemostafavi/qsimpy.git
 git+https://github.com/samiemostafavi/pr3d.git
+loguru
+pyspark==3.3.0
+petastorm==0.11.4
+tabulate
 
 
 

@@ -153,8 +153,8 @@ def create_run_graph(params):
 
 if __name__ == "__main__":
 
-    sequential_runs = 1 # 11
-    parallel_runs = 4 # 18
+    sequential_runs = 11 # 11
+    parallel_runs = 18 # 18
     for j in range(sequential_runs):
 
         processes = []

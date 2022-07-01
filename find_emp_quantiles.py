@@ -71,6 +71,7 @@ def make_conditions_dict(states_conf):
 # init Spark
 spark,sc = init_spark()
 
+
 # set manually:
 #qrange_list = [0.9, 0.99, 0.999, 0.9999, 0.99999];
 
@@ -101,11 +102,11 @@ print(f"Number of imported samples: {df.count()}")
 # Figure out the conditions
 conditions_conf, conditions_table =  make_conditions_dict({
         'queue_length':{
-            'n':5,
+            'n':4,
             'max':10,
         },
         'longer_delay_prob':{
-            'n':5,
+            'n':4,
             'max':1,
         }
     }
@@ -117,9 +118,6 @@ print(f"Conditions table: \n{conditions_table}")
 quantiles_table = pd.DataFrame(columns = [str(q) for q in qrange_list])
 
 conditions_table['num_samples'] = 0
-
-print(f"Conditions table: \n{conditions_table}")
-
 
 for index, row in conditions_table.iterrows():
     print(f"-------- Calculating condition {index+1}/{len(conditions_table)}: {row.values}")

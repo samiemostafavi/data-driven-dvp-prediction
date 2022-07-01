@@ -18,7 +18,6 @@ for f in all_files:
     if f.endswith(".parquet"):
         files.append(results_path + raw_dfs_path + f)
 
-
 df = load_parquet(file_addresses=files,read_columns=['service_delay'])
 
 model = GammaEVM(
