@@ -7,7 +7,7 @@ import os
 import polars as pl
 
 import qsimpy
-from arrivals import HeavyTail
+from arrivals import HeavyTail, heavytail_gamma_cdf
 
 p = Path(__file__).parents[0]
 results_path = str(p) + '/results/raw_dfs'
@@ -88,10 +88,24 @@ def create_run_graph(params):
         df['service_delay'] = df['end_time']-df['service_time']
         df['queue_delay'] = df['service_time']-df['queue_time']
 
+        # process time in service
         df['time_in_service'] = df.apply(
                                 lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
                                 axis=1,
                             ).astype('float64')
+
+        # process longer_delay_prob here for benchmark purposes #FIXME #FIXME it must be 1-CDF not PDF!
+        print(df['time_in_service'])
+        df['longer_delay_prob'] = np.float64(1.00) - heavytail_gamma_cdf(
+            y = df['time_in_service'].to_numpy(),
+            gamma_concentration = 5,
+            gamma_rate = 0.5,
+            gpd_concentration = 0.4,
+            threshold_qnt = 0.8,
+            dtype = np.float32,
+        )
+        print(df['longer_delay_prob'])
+        df['longer_delay_prob'] = df['longer_delay_prob'].fillna(np.float64(0.00))
 
         del df['last_service_time'], df['queue_is_busy']
 
@@ -151,6 +165,9 @@ def create_run_graph(params):
     df_finished = df.filter(pl.col('end_time') >= 0)
     df = df_finished
 
+
+    print(df)
+
     end = time.time()
 
     df.to_parquet(results_path + 'tailbench_{}.parquet'.format(params['run_number']))
@@ -161,8 +178,8 @@ def create_run_graph(params):
 
 if __name__ == "__main__":
 
-    sequential_runs = 10 # 10
-    parallel_runs = 18 # 18
+    sequential_runs = 1 # 10
+    parallel_runs = 1 # 18
     for j in range(sequential_runs):
 
         processes = []
@@ -173,7 +190,7 @@ if __name__ == "__main__":
                 'arrival_seed' : 100234+i*100101+j*10223,
                 'service_seed' : 120034+i*200202+j*20111,
                 'gpd_concentration' : 0.4, #0.3, 0.2, 0.1, 0.001
-                'until': int(10000000), # 10M timesteps takes 1000 seconds, generates 900k samples
+                'until': int(10000), # 10M timesteps takes 1000 seconds, generates 900k samples
                 'report_state' : 0.1, # report when 10%, 20%, etc progress reaches
             }
             p = mp.Process(target=create_run_graph, args=(params,))
