@@ -1,2 +1,2 @@
-from .heavy_tail_gamma import HeavyTail, heavytail_gamma_prob, heavytail_gamma_cdf
+from .heavy_tail_gamma import HeavyTailGamma, RandomProcess
 from .autoregressive import Autoregressive

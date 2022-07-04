@@ -83,7 +83,8 @@ def create_run_graph(params):
 
     # define postprocess function
     def process_time_in_service(df):
- 
+        # df is pandas dataframe in batch_size
+
         df['end2end_delay'] = df['end_time']-df['start_time']
         df['service_delay'] = df['end_time']-df['service_time']
         df['queue_delay'] = df['service_time']-df['queue_time']
@@ -94,17 +95,15 @@ def create_run_graph(params):
                                 axis=1,
                             ).astype('float64')
 
-        # process longer_delay_prob here for benchmark purposes #FIXME #FIXME it must be 1-CDF not PDF!
-        print(df['time_in_service'])
+        # process longer_delay_prob here for benchmark purposes
         df['longer_delay_prob'] = np.float64(1.00) - heavytail_gamma_cdf(
             y = df['time_in_service'].to_numpy(),
-            gamma_concentration = 5,
-            gamma_rate = 0.5,
-            gpd_concentration = 0.4,
-            threshold_qnt = 0.8,
-            dtype = np.float32,
+            gamma_concentration = ht._gamma_concentration,
+            gamma_rate = ht._gamma_rate,
+            gpd_concentration = ht._gpd_concentration,
+            threshold_qnt = ht._threshold_qnt,
+            dtype = ht._dtype,
         )
-        print(df['longer_delay_prob'])
         df['longer_delay_prob'] = df['longer_delay_prob'].fillna(np.float64(0.00))
 
         del df['last_service_time'], df['queue_is_busy']
@@ -164,7 +163,6 @@ def create_run_graph(params):
     df_dropped = df.filter(pl.col('end_time') == -1)
     df_finished = df.filter(pl.col('end_time') >= 0)
     df = df_finished
-
 
     print(df)
 

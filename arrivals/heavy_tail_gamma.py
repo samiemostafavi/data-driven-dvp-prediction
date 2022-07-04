@@ -4,6 +4,10 @@ tfd = tfp.distributions
 import seaborn as sns
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from dataclasses import dataclass
+from typing import Dict
+from qsimpy.random import RandomProcess
+
 
 def mixture_samples(
     cdf_bool_split_t,
@@ -29,263 +33,219 @@ def mixture_samples(
         axis=0,
     )
 
+class HeavyTailGamma(RandomProcess):
+    type: str = 'heavytailgamma'
+    gamma_concentration : np.float64
+    gamma_rate : np.float64
+    gpd_concentration : np.float64
+    threshold_qnt : np.float64
 
-def heavytail_gamma_prob(
-    y,
-    gamma_concentration,
-    gamma_rate,
-    gpd_concentration,
-    threshold_qnt = 0.9,
-    dtype = tf.float64,
-):
+    def prepare_for_run(self):
+        self._rng = np.random.default_rng(self.seed)
 
-    # making conditional distribution
-    # gamma + gpd
-    # to give probability
-
-    y_t = tf.convert_to_tensor(y, dtype=dtype)
-
-    threshold_qnt_t = tf.convert_to_tensor(threshold_qnt, dtype=dtype)
-    
-    gamma = tfp.distributions.Gamma(
-        concentration=gamma_concentration,
-        rate=gamma_rate,
-    )
-
-    threshold_act_t = gamma.quantile(threshold_qnt_t)
-
-    #print("threshold:")
-    #print(threshold_act_t.numpy())
-
-    # split the samples into bulk and tail according to the norm_factor (from X and Y)
-    # gives a tensor, indicating which random_input are greater than norm_factor
-    # greater than threshold is true, else false
-    bool_split_t = tf.greater(y_t,threshold_act_t) # this is in Boolean
-    
-    #print("split_tensor:")
-    #print(bool_split_t.numpy())
-
-    # gamma probabilities tensor
-    gamma_probs_t = gamma.prob(y_t)
-    #print("gamma probs:")
-    #print(gamma_probs_t.numpy())
-
-    # make gpd distribution
-    gpd_scale = tf.divide(
-        tf.constant(1.00,dtype = dtype) - threshold_qnt_t,
-        gamma.prob(threshold_act_t),
-    )
-
-    gpd = tfp.distributions.GeneralizedPareto(
-        loc = threshold_act_t, #0.00
-        scale = gpd_scale,
-        concentration = gpd_concentration,
-    )
-
-    # gpd probabilities tensor
-    gpd_probs_t = tf.multiply(
-        gpd.prob(y_t),
-        tf.constant(1.00,dtype = dtype)-threshold_qnt_t,
-    )
-    
-    #print("gpd_probs:")
-    #print(gpd_probs_t.numpy())
-    # convert NaNs to zeros
-    gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t), gpd_probs_t)
-    #print(gpd_probs_t.numpy())
-
-    # pass them through the mixture filter
-    result = mixture_samples(
-        cdf_bool_split_t = bool_split_t,
-        gpd_sample_t = gpd_probs_t,
-        bulk_sample_t = gamma_probs_t,
-        dtype = dtype,
-    )
-
-    # Keep NaNs from the input
-    result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
-
-    return result
-
-
-def heavytail_gamma_cdf(
-    y,
-    gamma_concentration,
-    gamma_rate,
-    gpd_concentration,
-    threshold_qnt = 0.9,
-    dtype = tf.float64,
-):
-
-    # making conditional distribution
-    # gamma + gpd
-    # to give probability
-
-    y_t = tf.convert_to_tensor(y, dtype=dtype)
-
-    threshold_qnt_t = tf.convert_to_tensor(threshold_qnt, dtype=dtype)
-    
-    gamma = tfp.distributions.Gamma(
-        concentration=gamma_concentration,
-        rate=gamma_rate,
-    )
-
-    threshold_act_t = gamma.quantile(threshold_qnt_t)
-
-    #print("threshold:")
-    #print(threshold_act_t.numpy())
-
-    # split the samples into bulk and tail according to the norm_factor (from X and Y)
-    # gives a tensor, indicating which random_input are greater than norm_factor
-    # greater than threshold is true, else false
-    bool_split_t = tf.greater(y_t,threshold_act_t) # this is in Boolean
-    
-    #print("split_tensor:")
-    #print(bool_split_t.numpy())
-
-    # gamma probabilities tensor
-    gamma_probs_t = gamma.cdf(y_t)
-    #print("gamma probs:")
-    #print(gamma_probs_t.numpy())
-
-    # make gpd distribution
-    gpd_scale = tf.divide(
-        tf.constant(1.00,dtype = dtype) - threshold_qnt_t,
-        gamma.prob(threshold_act_t),
-    )
-
-    gpd = tfp.distributions.GeneralizedPareto(
-        loc = threshold_act_t, #0.00
-        scale = gpd_scale,
-        concentration = gpd_concentration,
-    )
-
-    # gpd probabilities tensor
-    gpd_probs_t = tf.multiply( 
-        gpd.cdf(y_t),
-        tf.constant(1.00,dtype = dtype) - threshold_qnt_t,
-    ) + threshold_qnt_t
-    
-    #print("gpd_probs:")
-    #print(gpd_probs_t.numpy())
-    gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t), gpd_probs_t)
-
-    # pass them through the mixture filter
-    result = mixture_samples(
-        cdf_bool_split_t = bool_split_t,
-        gpd_sample_t = gpd_probs_t,
-        bulk_sample_t = gamma_probs_t,
-        dtype = dtype,
-    )
-
-    # Keep NaNs from the input
-    result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
-
-    return result
-
-
-
-def heavytail_gamma_n(
-    n,
-    gamma_concentration,
-    gamma_rate,
-    gpd_concentration,
-    seed : int = 0 ,
-    threshold_qnt = 0.9,
-    dtype = tf.float64,
-):
-
-    # making conditional distribution
-    # gamma + gpd
-
-    # sample = rnd;
-    samples_t = tf.random.uniform(
-        shape = [n],
-        dtype = dtype,
-        seed = seed,
-    )
-
-    threshold_qnt_t = tf.convert_to_tensor(threshold_qnt, dtype=dtype)
-    
-    gamma = tfp.distributions.Gamma(
-        concentration=gamma_concentration,
-        rate=gamma_rate,
-    )
-
-    threshold_act_t = gamma.quantile(threshold_qnt_t)
-
-    # split the samples into bulk and tail according to the norm_factor (from X and Y)
-    # gives a tensor, indicating which random_input are greater than norm_factor
-    # greater than threshold is true, else false
-    bool_split_t = tf.greater(samples_t, threshold_qnt_t) # this is in Boolean
-
-    # gamma samples tensor
-    gamma_samples_t = gamma.quantile(samples_t)
-    
-    # gpd samples tensor
-    gpd_presamples_t = tf.divide(
-        samples_t-threshold_qnt_t,
-        tf.constant(1.00,dtype = dtype)-threshold_qnt_t,
-    )
-
-    gpd_scale = tf.multiply(
-        tf.divide(
-            tf.constant(1.00,dtype = dtype),
-            gamma.prob(threshold_act_t),
-        ),
-        tf.square(
-            tf.constant(1.00,dtype = dtype)-threshold_qnt_t
-        ),
-    )
-
-    gpd = tfp.distributions.GeneralizedPareto(
-        loc = 0.00,
-        scale = gpd_scale,
-        concentration = gpd_concentration,
-    )
-    gpd_samples_t = gpd.quantile(gpd_presamples_t)/(tf.constant(1.00,dtype = dtype)-threshold_qnt_t)+threshold_act_t
-
-    # pass them through the mixture filter
-    result = mixture_samples(
-        cdf_bool_split_t = bool_split_t,
-        gpd_sample_t = gpd_samples_t,
-        bulk_sample_t = gamma_samples_t,
-        dtype = dtype,
-    )
-
-    return result
-
-class HeavyTail():
-    def __init__ (self, 
-        n = 1000000,
-        gamma_concentration = 10,
-        gamma_rate = 0.5,
-        gpd_concentration = 0.2,
-        threshold_qnt = 0.8,
-        seed = 0,
-        dtype = tf.float32,
+    def sample_n(self,
+        n,
     ):
 
-        self._n = n
-        self._counter = 0
-        self._gamma_concentration = gamma_concentration
-        self._gamma_rate = gamma_rate
-        self._gpd_concentration = gpd_concentration
-        self._threshold_qnt = threshold_qnt
-        self._dtype = dtype
-        self._seed = seed
+        # making conditional distribution
+        # gamma + gpd
 
-        self._numbers = heavytail_gamma_n(
-            n = n,
-            gamma_concentration = gamma_concentration,
-            gamma_rate = gamma_rate,
-            gpd_concentration = gpd_concentration,
-            threshold_qnt = threshold_qnt,
-            dtype = dtype,
-            seed = seed,
-        ).numpy()
+        # sample = rnd;
+        samples_np = self._rng.uniform(
+            low = 0.0,
+            high = 1.0,
+            size = n,
+        )
+        samples_t = tf.convert_to_tensor(value=samples_np, dtype=self.dtype)
 
-    def get_rnd_heavy_tail(self):
-        res = self._numbers[self._counter]
-        self._counter = self._counter + 1
-        return res
+        threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
+        
+        gamma = tfp.distributions.Gamma(
+            concentration=self.gamma_concentration,
+            rate=self.gamma_rate,
+        )
+
+        threshold_act_t = gamma.quantile(threshold_qnt_t)
+
+        # split the samples into bulk and tail according to the norm_factor (from X and Y)
+        # gives a tensor, indicating which random_input are greater than norm_factor
+        # greater than threshold is true, else false
+        bool_split_t = tf.greater(samples_t, threshold_qnt_t) # this is in Boolean
+
+        # gamma samples tensor
+        gamma_samples_t = gamma.quantile(samples_t)
+        
+        # gpd samples tensor
+        gpd_presamples_t = tf.divide(
+            samples_t-threshold_qnt_t,
+            tf.constant(1.00,dtype = self.dtype)-threshold_qnt_t,
+        )
+
+        gpd_scale = tf.multiply(
+            tf.divide(
+                tf.constant(1.00,dtype = self.dtype),
+                gamma.prob(threshold_act_t),
+            ),
+            tf.square(
+                tf.constant(1.00,dtype = self.dtype)-threshold_qnt_t
+            ),
+        )
+
+        gpd = tfp.distributions.GeneralizedPareto(
+            loc = 0.00,
+            scale = gpd_scale,
+            concentration = self.gpd_concentration,
+        )
+        gpd_samples_t = gpd.quantile(gpd_presamples_t)/(tf.constant(1.00,dtype = self.dtype)-threshold_qnt_t)+threshold_act_t
+
+        # pass them through the mixture filter
+        result = mixture_samples(
+            cdf_bool_split_t = bool_split_t,
+            gpd_sample_t = gpd_samples_t,
+            bulk_sample_t = gamma_samples_t,
+            dtype = self.dtype,
+        )
+
+        return result.numpy()
+
+    def prob(self,
+        y,
+    ):
+    
+        # making conditional distribution
+        # gamma + gpd
+        # to give probability
+
+        y_t = tf.convert_to_tensor(y, dtype=self.dtype)
+
+        threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
+        
+        gamma = tfp.distributions.Gamma(
+            concentration=self.gamma_concentration,
+            rate=self.gamma_rate,
+        )
+
+        threshold_act_t = gamma.quantile(threshold_qnt_t)
+
+        #print("threshold:")
+        #print(threshold_act_t.numpy())
+
+        # split the samples into bulk and tail according to the norm_factor (from X and Y)
+        # gives a tensor, indicating which random_input are greater than norm_factor
+        # greater than threshold is true, else false
+        bool_split_t = tf.greater(y_t,threshold_act_t) # this is in Boolean
+        
+        #print("split_tensor:")
+        #print(bool_split_t.numpy())
+
+        # gamma probabilities tensor
+        gamma_probs_t = gamma.prob(y_t)
+        #print("gamma probs:")
+        #print(gamma_probs_t.numpy())
+
+        # make gpd distribution
+        gpd_scale = tf.divide(
+            tf.constant(1.00,dtype = self.dtype) - threshold_qnt_t,
+            gamma.prob(threshold_act_t),
+        )
+
+        gpd = tfp.distributions.GeneralizedPareto(
+            loc = threshold_act_t, #0.00
+            scale = gpd_scale,
+            concentration = self.gpd_concentration,
+        )
+
+        # gpd probabilities tensor
+        gpd_probs_t = tf.multiply(
+            gpd.prob(y_t),
+            tf.constant(1.00,dtype = self.dtype)-threshold_qnt_t,
+        )
+        
+        #print("gpd_probs:")
+        #print(gpd_probs_t.numpy())
+        # convert NaNs to zeros
+        gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t), gpd_probs_t)
+        #print(gpd_probs_t.numpy())
+
+        # pass them through the mixture filter
+        result = mixture_samples(
+            cdf_bool_split_t = bool_split_t,
+            gpd_sample_t = gpd_probs_t,
+            bulk_sample_t = gamma_probs_t,
+            dtype = self.dtype,
+        )
+
+        # Keep NaNs from the input
+        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
+
+        return result
+    
+    def cdf(self,
+        y,
+    ):
+    
+        # making conditional distribution
+        # gamma + gpd
+        # to give probability
+
+        y_t = tf.convert_to_tensor(y, dtype=self.dtype)
+
+        threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
+        
+        gamma = tfp.distributions.Gamma(
+            concentration=self.gamma_concentration,
+            rate=self.gamma_rate,
+        )
+
+        threshold_act_t = gamma.quantile(threshold_qnt_t)
+
+        #print("threshold:")
+        #print(threshold_act_t.numpy())
+
+        # split the samples into bulk and tail according to the norm_factor (from X and Y)
+        # gives a tensor, indicating which random_input are greater than norm_factor
+        # greater than threshold is true, else false
+        bool_split_t = tf.greater(y_t,threshold_act_t) # this is in Boolean
+        
+        #print("split_tensor:")
+        #print(bool_split_t.numpy())
+
+        # gamma probabilities tensor
+        gamma_probs_t = gamma.cdf(y_t)
+        #print("gamma probs:")
+        #print(gamma_probs_t.numpy())
+
+        # make gpd distribution
+        gpd_scale = tf.divide(
+            tf.constant(1.00,dtype = self.dtype) - threshold_qnt_t,
+            gamma.prob(threshold_act_t),
+        )
+
+        gpd = tfp.distributions.GeneralizedPareto(
+            loc = threshold_act_t, #0.00
+            scale = gpd_scale,
+            concentration = self.gpd_concentration,
+        )
+
+        # gpd probabilities tensor
+        gpd_probs_t = tf.multiply( 
+            gpd.cdf(y_t),
+            tf.constant(1.00,dtype = self.dtype) - threshold_qnt_t,
+        ) + threshold_qnt_t
+        
+        #print("gpd_probs:")
+        #print(gpd_probs_t.numpy())
+        gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t), gpd_probs_t)
+
+        # pass them through the mixture filter
+        result = mixture_samples(
+            cdf_bool_split_t = bool_split_t,
+            gpd_sample_t = gpd_probs_t,
+            bulk_sample_t = gamma_probs_t,
+            dtype = self.dtype,
+        )
+
+        # Keep NaNs from the input
+        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
+
+        return result
