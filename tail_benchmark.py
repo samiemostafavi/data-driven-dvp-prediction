@@ -194,13 +194,13 @@ if __name__ == "__main__":
 
             params = {
                 'records_path' : records_path,
-                'arrivals_number' : 100000, #1.5M
+                'arrivals_number' : 5000000, #1.5M
                 'run_number' : j*parallel_runs + i,
                 'arrival_seed' : 100234+i*100101+j*10223,
                 'service_seed' : 120034+i*200202+j*20111,
                 'gpd_concentration' : bench_params[key_this_run], # tail decays
-                'until': int(10000), # 10M timesteps takes 1000 seconds, generates 900k samples
-                'report_state' : 0.1, # report when 10%, 20%, etc progress reaches
+                'until': int(40000000), # 10M timesteps takes 1000 seconds, generates 900k samples
+                'report_state' : 0.05, # report when 10%, 20%, etc progress reaches
             }
 
             p = mp.Process(target=create_run_graph, args=(params,))
