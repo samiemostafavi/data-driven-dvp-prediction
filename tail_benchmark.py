@@ -5,119 +5,92 @@ import time
 from pathlib import Path
 import os
 import polars as pl
+from dill.source import importable
+import json
 
 import qsimpy
-from arrivals import HeavyTail, heavytail_gamma_cdf
-
-p = Path(__file__).parents[0]
-results_path = str(p) + '/results/raw_dfs'
+from arrivals import HeavyTailGamma
+from qsimpy.random import Deterministic, RandomProcess
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 def create_run_graph(params):
-    # params = {
-    #   'arrivals_number' : 1500000,
-    #   'run_number' : 0,
-    #   'arrival_seed' : 100234,
-    #   'service_seed' : 120034,
-    #   'gpd_concentration' : 0.4,
-    #   'until': int(1000000),
-    #   'report_state' : 0.1,
-    # }
+    # Create the QSimPy environment
+    # a class for keeping all of the entities and accessing their attributes
+    model = qsimpy.Model(name=f"tail benchmark #{params['run_number']}")
 
-    # arrival function: Uniform
-    arrival_rate = 0.091
-    rng_arrival = np.random.default_rng(params['arrival_seed'])
-    arrival = functools.partial(rng_arrival.uniform, 1.00/arrival_rate, 1.00/arrival_rate)
+    # Create a source
+    # arrival process deterministic
+    arrival = Deterministic(
+        rate = 0.095,
+        seed = params['arrival_seed'],
+        dtype = 'float64',
+    )
+    source = qsimpy.Source(
+        name='start-node',
+        arrival_rp=arrival,
+        task_type='0',
+    )
+    model.add_entity(source)
 
-    # Gamma distribution
-    ht = HeavyTail(
-        n = params['arrivals_number'],
+    # Queue and Server
+    # service process a HeavyTailGamma
+    service = HeavyTailGamma(
         seed = params['service_seed'],
         gamma_concentration = 5,
         gamma_rate = 0.5,
-        gpd_concentration = params['gpd_concentration'], #0.4, 0.3, 0.2, 0.1, 0.01
+        gpd_concentration = params['gpd_concentration'],
         threshold_qnt = 0.8,
-        dtype = np.float32,
+        dtype = 'float64',
+        batch_size = params['arrivals_number'],
     )
-    # mean is 10.807
-
-    # get the function
-    service = ht.get_rnd_heavy_tail
-
-    # Create the QSimPy environment
-    # a class for keeping all of the entities and accessing their attributes
-    env = qsimpy.Environment(name='0')
-
-    # report timesteps
-    def report_state(time_step):
-        yield env.timeout(time_step)
-        print(f"{params['run_number']}: Simulation progress {100.0*float(env.now)/float(params['until'])}% done")
-
-    for step in np.arange(0, params['until'], params['until']*params['report_state'], dtype=int):
-        env.process(report_state(step))
-
-    # Create a source
-    source = qsimpy.Source(
-        name='start-node',
-        env=env,
-        arrival_dist=arrival,
-        task_type='0',
-    )
-
-    # a queue
     queue = qsimpy.SimpleQueue(
         name='queue',
-        env=env,
-        service_dist=service,
-        queue_limit=10,
+        service_rp= service,
+        queue_limit=10, #None
     )
+    model.add_entity(queue)
 
-    # a sink: to capture both finished tasks and dropped tasks (compare PolarSink vs Sink)
+    # Sink: to capture both finished tasks and dropped tasks (PolarSink to be faster)
     sink = qsimpy.PolarSink(
         name='sink',
-        env=env,
-        debug=False,
         batch_size = 10000,
     )
+    # define postprocess function: the name must be 'user_fn'
 
-    # define postprocess function
-    def process_time_in_service(df):
+    def user_fn(df):
         # df is pandas dataframe in batch_size
-
         df['end2end_delay'] = df['end_time']-df['start_time']
         df['service_delay'] = df['end_time']-df['service_time']
         df['queue_delay'] = df['service_time']-df['queue_time']
-
         # process time in service
         df['time_in_service'] = df.apply(
                                 lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
                                 axis=1,
                             ).astype('float64')
-
         # process longer_delay_prob here for benchmark purposes
-        df['longer_delay_prob'] = np.float64(1.00) - heavytail_gamma_cdf(
+        df['longer_delay_prob'] = np.float64(1.00) - service.cdf(
             y = df['time_in_service'].to_numpy(),
-            gamma_concentration = ht._gamma_concentration,
-            gamma_rate = ht._gamma_rate,
-            gpd_concentration = ht._gpd_concentration,
-            threshold_qnt = ht._threshold_qnt,
-            dtype = ht._dtype,
         )
         df['longer_delay_prob'] = df['longer_delay_prob'].fillna(np.float64(0.00))
-
         del df['last_service_time'], df['queue_is_busy']
-
         return df
 
-    sink.post_process_fn = process_time_in_service
+    # convert it to string and pass it to the sink function
+    #user_fn_str = importable(user_fn, source=True)
+    #sink.set_post_process_fn(fn_str=user_fn_str)
+    #sink.set_post_process_fn
+
+    sink._post_process_fn = user_fn
+    model.add_entity(sink)
 
     # Wire start-node, queue, end-node, and sink together
-    source.out = queue
-    queue.out = sink
-    queue.drop = sink
+    source.out = queue.name
+    queue.out = sink.name
+    queue.drop = sink.name
 
-    env.task_records = {
+    # Setup task records
+    model.set_task_records({
         'timestamps' : {
             source.name : {
                 'task_generation':'start_time',
@@ -139,11 +112,25 @@ def create_run_graph(params):
                 },
             },
         },
-    }
+    })
 
-    # Run it
+    modeljson = model.json()
+    with open(params['records_path']+f"{params['run_number']}_model.json", 'w', encoding='utf-8') as f:
+        f.write(modeljson)
+
+    # prepare for run
+    model.prepare_for_run(debug=False)
+
+    # report timesteps
+    def report_state(time_step):
+        yield model.env.timeout(time_step)
+        print(f"{params['run_number']}: Simulation progress {100.0*float(model.env.now)/float(params['until'])}% done")
+    for step in np.arange(0, params['until'], params['until']*params['report_state'], dtype=int):
+        model.env.process(report_state(step))
+
+    # Run!
     start = time.time()
-    env.run(until=params['until'])
+    model.env.run(until=params['until'])
     end = time.time()
     print("{0}: Run finished in {1} seconds".format(params['run_number'],end - start))
 
@@ -164,11 +151,11 @@ def create_run_graph(params):
     df_finished = df.filter(pl.col('end_time') >= 0)
     df = df_finished
 
-    print(df)
+    #print(df)
 
     end = time.time()
-
-    df.to_parquet(results_path + 'tailbench_{}.parquet'.format(params['run_number']))
+    
+    df.to_parquet(params['records_path'] + f"{params['run_number']}_records.parquet")
 
     print("{0}: Data processing finished in {1} seconds".format(params['run_number'],end - start))
 
@@ -176,21 +163,46 @@ def create_run_graph(params):
 
 if __name__ == "__main__":
 
-    sequential_runs = 1 # 10
-    parallel_runs = 1 # 18
+    # project folder setting
+    p = Path(__file__).parents[0]
+    project_path = str(p) + '/projects/tail_benchmark/'
+
+    # simulation parameters
+    bench_params = { # tail decays
+        'p4':0.4, 
+        'p3':0.3, 
+        'p2':0.2, 
+        'p1':0.1, 
+        'pz':0.0001,
+    }
+
+    sequential_runs = 5 # 10
+    parallel_runs = 18 # 18
     for j in range(sequential_runs):
 
         processes = []
         for i in range(parallel_runs):
+
+            # parameter figure out
+            keys = list(bench_params.keys())
+            key_this_run = keys[j%len(keys)]
+
+            # create and prepare the results directory
+            results_path = project_path + key_this_run  + '_results/'
+            records_path = results_path + 'records/'
+            os.makedirs(records_path, exist_ok=True)
+
             params = {
-                'arrivals_number' : 1500000,
+                'records_path' : records_path,
+                'arrivals_number' : 100000, #1.5M
                 'run_number' : j*parallel_runs + i,
                 'arrival_seed' : 100234+i*100101+j*10223,
                 'service_seed' : 120034+i*200202+j*20111,
-                'gpd_concentration' : 0.4, #0.3, 0.2, 0.1, 0.001
+                'gpd_concentration' : bench_params[key_this_run], # tail decays
                 'until': int(10000), # 10M timesteps takes 1000 seconds, generates 900k samples
                 'report_state' : 0.1, # report when 10%, 20%, etc progress reaches
             }
+
             p = mp.Process(target=create_run_graph, args=(params,))
             p.start()
             processes.append(p)

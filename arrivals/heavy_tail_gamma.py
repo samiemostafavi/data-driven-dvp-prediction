@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from dataclasses import dataclass
 from typing import Dict
+from pydantic import PrivateAttr
 from qsimpy.random import RandomProcess
 
 
@@ -39,30 +40,47 @@ class HeavyTailGamma(RandomProcess):
     gamma_rate : np.float64
     gpd_concentration : np.float64
     threshold_qnt : np.float64
+    batch_size : int = None
+
+    # private parameters for batch sample generation
+    _pregenerated_samples : list[np.float64] = PrivateAttr()
+    _counter : int = PrivateAttr()
 
     def prepare_for_run(self):
-        self._rng = np.random.default_rng(self.seed)
+        self._rng = tf.random.Generator.from_seed(self.seed)
+        if self.batch_size is not None:
+            self._pregenerated_samples = self.sample_n(self.batch_size)
+            self._counter = 0
+
+    def sample(self):
+        if self.batch_size is not None:
+            assert self._counter < self.batch_size
+            res = self._pregenerated_samples[self._counter]
+            self._counter=self._counter+1
+            return res
+        else:
+            return self.sample_n(1)[0]
 
     def sample_n(self,
         n,
     ):
-
         # making conditional distribution
         # gamma + gpd
 
         # sample = rnd;
         samples_np = self._rng.uniform(
-            low = 0.0,
-            high = 1.0,
-            size = n,
+            minval = 0.00,
+            maxval = 1.00,
+            shape = [n],
+            dtype = self.dtype,
         )
         samples_t = tf.convert_to_tensor(value=samples_np, dtype=self.dtype)
 
         threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
         
         gamma = tfp.distributions.Gamma(
-            concentration=self.gamma_concentration,
-            rate=self.gamma_rate,
+            concentration=np.tile(self.gamma_concentration,2).astype(self.dtype)[0],
+            rate=np.tile(self.gamma_rate,2).astype(self.dtype)[0],
         )
 
         threshold_act_t = gamma.quantile(threshold_qnt_t)
@@ -92,9 +110,9 @@ class HeavyTailGamma(RandomProcess):
         )
 
         gpd = tfp.distributions.GeneralizedPareto(
-            loc = 0.00,
+            loc = np.tile(0.00,2).astype(self.dtype)[0],
             scale = gpd_scale,
-            concentration = self.gpd_concentration,
+            concentration = np.tile(self.gpd_concentration,2).astype(self.dtype)[0],
         )
         gpd_samples_t = gpd.quantile(gpd_presamples_t)/(tf.constant(1.00,dtype = self.dtype)-threshold_qnt_t)+threshold_act_t
 
@@ -119,10 +137,10 @@ class HeavyTailGamma(RandomProcess):
         y_t = tf.convert_to_tensor(y, dtype=self.dtype)
 
         threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
-        
+
         gamma = tfp.distributions.Gamma(
-            concentration=self.gamma_concentration,
-            rate=self.gamma_rate,
+            concentration=np.tile(self.gamma_concentration,2).astype(self.dtype)[0],
+            rate=np.tile(self.gamma_rate,2).astype(self.dtype)[0],
         )
 
         threshold_act_t = gamma.quantile(threshold_qnt_t)
@@ -152,7 +170,7 @@ class HeavyTailGamma(RandomProcess):
         gpd = tfp.distributions.GeneralizedPareto(
             loc = threshold_act_t, #0.00
             scale = gpd_scale,
-            concentration = self.gpd_concentration,
+            concentration = np.tile(self.gpd_concentration,2).astype(self.dtype)[0],
         )
 
         # gpd probabilities tensor
@@ -176,7 +194,7 @@ class HeavyTailGamma(RandomProcess):
         )
 
         # Keep NaNs from the input
-        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
+        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t, dtype=self.dtype)*tf.constant(np.nan, dtype=self.dtype), result)
 
         return result
     
@@ -193,8 +211,8 @@ class HeavyTailGamma(RandomProcess):
         threshold_qnt_t = tf.convert_to_tensor(self.threshold_qnt, dtype=self.dtype)
         
         gamma = tfp.distributions.Gamma(
-            concentration=self.gamma_concentration,
-            rate=self.gamma_rate,
+            concentration=np.tile(self.gamma_concentration,2).astype(self.dtype)[0],
+            rate=np.tile(self.gamma_rate,2).astype(self.dtype)[0],
         )
 
         threshold_act_t = gamma.quantile(threshold_qnt_t)
@@ -224,7 +242,7 @@ class HeavyTailGamma(RandomProcess):
         gpd = tfp.distributions.GeneralizedPareto(
             loc = threshold_act_t, #0.00
             scale = gpd_scale,
-            concentration = self.gpd_concentration,
+            concentration = np.tile(self.gpd_concentration,2).astype(self.dtype)[0],
         )
 
         # gpd probabilities tensor
@@ -235,7 +253,7 @@ class HeavyTailGamma(RandomProcess):
         
         #print("gpd_probs:")
         #print(gpd_probs_t.numpy())
-        gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t), gpd_probs_t)
+        gpd_probs_t = tf.where(tf.math.is_nan(gpd_probs_t), tf.zeros_like(gpd_probs_t, dtype=self.dtype), gpd_probs_t)
 
         # pass them through the mixture filter
         result = mixture_samples(
@@ -246,6 +264,6 @@ class HeavyTailGamma(RandomProcess):
         )
 
         # Keep NaNs from the input
-        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t)*tf.constant(np.nan), result)
+        result = tf.where(tf.math.is_nan(y_t), tf.ones_like(y_t, dtype=self.dtype)*tf.constant(np.nan, dtype=self.dtype), result)
 
         return result

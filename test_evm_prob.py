@@ -8,15 +8,30 @@ import pandas as pd
 marray = [np.nan, 1,2,3,4,5,6,7,8,9,10, np.nan]
 
 
+htg0 = HeavyTailGamma(
+    seed = 12345,
+    gamma_concentration = 5,
+    gamma_rate = 0.5,
+    gpd_concentration = 0.4,
+    threshold_qnt = 0.8,
+    dtype = 'float64',#np.float32, 
+    batch_size = 100,
+)
+htg0.prepare_for_run()
+for i in range(100):
+    print(htg0.sample())
+
+
 htg = HeavyTailGamma(
     seed = 12345,
     gamma_concentration = 5,
     gamma_rate = 0.5,
     gpd_concentration = 0.4,
     threshold_qnt = 0.8,
-    dtype = 'float32'#np.float32,
+    dtype = 'float64'#np.float32, 
 )
 htg.prepare_for_run()
+
 
 print(htg.prob(marray))
 print(htg.cdf(marray))
@@ -27,6 +42,13 @@ del htg
 
 print(mstr)
 htg = RandomProcess.parse_raw(mstr)
+htg.prepare_for_run()
+
+print(htg.prob(marray))
+print(htg.cdf(marray))
+print(htg.sample_n(10))
+
+exit(0)
 
 ahtg = Autoregressive(
     seed = 12345,
@@ -34,7 +56,7 @@ ahtg = Autoregressive(
     phi=[0.1],
     c = 0,
     base_process=htg,
-    dtype = 'float32',
+    dtype = 'float64',
 )
 ahtg.prepare_for_run()
 print(ahtg.json())
