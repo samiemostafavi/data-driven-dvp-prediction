@@ -11,7 +11,7 @@ import math
 import matplotlib.ticker as mticker
 
 # open the ground truth written in the csv files
-project_folder = "projects/tail_benchmark/" 
+project_folder = "projects/ar_benchmark/" 
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 condition_labels = ['queue_length', 'longer_delay_prob']
@@ -48,14 +48,21 @@ print(f"{len(dataframes)} simulation results found in {project_folder}.")
 #print(models)
 
 # find the simulation parameter
-result = DeepDiff(models[0],models[1])
+result = DeepDiff(
+    t1 = models[0],
+    t2 = models[1],
+    exclude_paths={
+        "root['name']",
+    },
+    exclude_regex_paths={r"root\['\w+'\].+\['seed'\]"}
+)
 result = result['values_changed']
-for key in result.keys():
-    if ('seed' in key) or (key == "root['name']"):
-        continue
-    else:
-        keys_list = key.replace("']"," ").replace("['"," ").split()
-        break
+keys_list = list(result.keys())[0] \
+    .replace("']"," ") \
+    .replace("['"," ") \
+    .replace("["," ") \
+    .replace("]"," ").split()
+keys_list = list(map(lambda x:int(x) if x.isdigit() else x,keys_list))
 keys_list = keys_list[1:]
 print(f"The simulation parameter keys that I have found is: {keys_list}")
 
