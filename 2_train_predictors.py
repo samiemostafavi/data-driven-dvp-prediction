@@ -1,0 +1,145 @@
+import numpy as np
+from tensorflow import keras
+import tensorflow as tf
+from pyspark.sql import SparkSession
+from petastorm import TransformSpec
+import os
+from os.path import dirname, abspath
+from loguru import logger
+from petastorm.spark import SparkDatasetConverter, make_spark_converter
+from pr3d.de import ConditionalGammaEVM
+import warnings
+warnings.filterwarnings("ignore")
+
+
+def init_spark():
+
+    spark = SparkSession.builder \
+       .appName("Training") \
+       .config("spark.driver.memory", "70g") \
+       .config("spark.driver.maxResultSize",0) \
+       .getOrCreate()
+
+    sc = spark.sparkContext
+    return spark,sc
+
+# init Spark
+spark,sc = init_spark()
+
+# Set a cache directory on DBFS FUSE for intermediate data.
+file_path = dirname(abspath(__file__))
+spark.conf.set(SparkDatasetConverter.PARENT_CACHE_DIR_URL_CONF, 'file://' + file_path + '/sparkcache')
+logger.info(f"Spark cache folder is set up at: {'file://' + file_path + '/sparkcache'}")
+
+npdtype = np.float64
+tfdtype = tf.float64
+strdtype = 'float64'
+
+condition_labels = ['queue_length', 'longer_delay_prob']
+y_label = 'end2end_delay'
+
+# open the dataframe from parquet files
+project_folder = "projects/tail_benchmark/" 
+project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
+
+for project_path in project_paths:
+    records_path = project_path + '/records/'
+    all_files = os.listdir(records_path)
+    files = []
+    for f in all_files:
+        if f.endswith(".parquet"):
+            files.append(records_path + f)
+
+    # read all files into Spark df
+    df=spark.read.parquet(*files)
+
+    dataset_size = 1024*120 # total will be the_number_of_files * file_samples_size
+    batch_size = 1024
+    df = df.limit(dataset_size)
+    df_train, df_val = df.randomSplit([0.9, 0.1], seed=12345)
+    # Make sure the number of partitions is at least the number of workers which is required for distributed training.
+    NUM_WORKERS = 1
+    df_train = df_train.repartition(NUM_WORKERS)
+    df_val = df_val.repartition(NUM_WORKERS)
+
+    converter_train = make_spark_converter(df_train)
+    converter_val = make_spark_converter(df_val)
+
+    logger.info(f"Parquet files loaded, train sampels: {len(converter_train)}, validation samples: {len(converter_val)}")
+
+    def transform_row(pd_batch):
+        """
+        The input and output of this function are pandas dataframes.
+        """
+        
+        pd_batch = pd_batch[[y_label,*condition_labels]]
+        pd_batch['y_input'] = pd_batch[y_label]
+        pd_batch = pd_batch.drop(columns=[y_label])
+        return pd_batch
+
+    # Note that the output shape of the `TransformSpec` is not automatically known by petastorm, 
+    # so we need to specify the shape for new columns in `edit_fields` and specify the order of 
+    # the output columns in `selected_fields`.
+    x_fields = [ (cond, npdtype, (), False) for cond in condition_labels ]
+    transform_spec_fn = TransformSpec(
+        transform_row,
+        edit_fields = [
+            *x_fields,
+            ('y_input', npdtype, (), False),
+        ],
+        selected_fields=[*condition_labels,'y_input'],
+    )
+
+    # initiate the non conditional predictor
+    model = ConditionalGammaEVM(
+        x_dim=condition_labels,
+        #centers= 8,
+        hidden_sizes = (16, 16),
+        dtype = strdtype,
+        bayesian = False,
+        #batch_size = 1024,
+    )
+
+    with converter_train.make_tf_dataset(
+        transform_spec=transform_spec_fn, 
+        batch_size=batch_size,
+    ) as train_dataset, \
+        converter_val.make_tf_dataset(
+        transform_spec=transform_spec_fn, 
+        batch_size=batch_size,
+    ) as val_dataset:
+
+        # tf.keras only accept tuples, not namedtuples
+        def map_fn(x):
+            x_dict = {}
+            for idx,cond in enumerate(condition_labels):
+                x_dict = {**x_dict, cond:x[idx]}
+            return ({**x_dict, 'y_input':x.y_input},x.y_input)
+
+        train_dataset = train_dataset.map(map_fn)
+        steps_per_epoch = len(converter_train) // batch_size
+
+        val_dataset = val_dataset.map(map_fn)
+        validation_steps = max(1, len(converter_val) // batch_size)
+
+
+        model._pl_training_model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=0.01), 
+            loss=model.loss,
+        )
+
+        logger.info(f"steps_per_epoch: {steps_per_epoch}, validation_steps: {validation_steps}")
+
+        hist = model._pl_training_model.fit(
+            train_dataset, 
+            steps_per_epoch=steps_per_epoch,
+            epochs=100,
+            validation_data=val_dataset,
+            validation_steps=validation_steps,
+            verbose=2
+        )
+
+        model.save(project_path+"/trained_model.h5")
+
+        logger.info(f"Model saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
+        logger.info(f"Parameters: {model.get_parameters()}")

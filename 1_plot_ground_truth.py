@@ -11,15 +11,13 @@ import math
 import matplotlib.ticker as mticker
 
 # open the ground truth written in the csv files
-project_folder = "projects/ar_benchmark/" 
+project_folder = "projects/tail_benchmark/"
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 condition_labels = ['queue_length', 'longer_delay_prob']
-xlim = [1,1500]
 
 dataframes = []
 models = []
-
 for project_path in project_paths:
     records_path = project_path + '/records/'
 
