@@ -71,7 +71,6 @@ def make_conditions_dict(states_conf):
 # init Spark
 spark,sc = init_spark()
 
-
 # set manually:
 #qrange_list = [0.9, 0.99, 0.999, 0.9999, 0.99999];
 
@@ -85,58 +84,66 @@ print('Quantile range list:')
 print(qrange_list)
 
 # open the dataframe from parquet files
-results_path = 'results/'
-processed_dfs_path = 'processed_dfs/'
-all_files = os.listdir(results_path+processed_dfs_path)
-files = []
-for f in all_files:
-    if f.endswith(".parquet"):
-        files.append(results_path + processed_dfs_path + f)
+project_folder = "projects/ar_benchmark/" 
+project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
-df=spark.read.parquet(*files)
-df.show()
-#df.summary().show() #takes a very long time
-print(f"Number of imported samples: {df.count()}")
+for project_path in project_paths:
 
 
-# Figure out the conditions
-conditions_conf, conditions_table =  make_conditions_dict({
-        'queue_length':{
-            'n':4,
-            'max':10,
-        },
-        'longer_delay_prob':{
-            'n':4,
-            'max':1,
+    records_path = project_path + '/records/'
+    all_files = os.listdir(records_path)
+    files = []
+    for f in all_files:
+        if f.endswith(".parquet"):
+            files.append(records_path + f)
+
+
+    df=spark.read.parquet(*files)
+    df.show()
+    #df.summary().show() #takes a very long time
+    print(f"Number of imported samples: {df.count()}")
+
+    # Figure out the conditions
+    conditions_conf, conditions_table =  make_conditions_dict({
+            'queue_length':{
+                'n':5,
+                'max':10,
+            },
+            'longer_delay_prob':{
+                'n':5,
+                'max':1,
+            }
         }
-    }
-)
+    )
 
-print(f"Conditions table: \n{conditions_table}")
+    print(f"Conditions table: \n{conditions_table}")
 
-# figure out conditionals and quantiles
-quantiles_table = pd.DataFrame(columns = [str(q) for q in qrange_list])
+    # figure out conditionals and quantiles
+    quantiles_table = pd.DataFrame(columns = [str(q) for q in qrange_list])
 
-conditions_table['num_samples'] = 0
+    conditions_table['num_samples'] = 0
 
-for index, row in conditions_table.iterrows():
-    print(f"-------- Calculating condition {index+1}/{len(conditions_table)}: {row.values}")
-
-    cond_df = df.alias('cond_df')
-    for key in row.keys():
-        if key in conditions_conf.keys():
-            cond_df = cond_df.where( df[key]>= row[key][0] ).where( df[key] < row[key][1] )
-
-    print(f"- Pyspark found {cond_df.count()} conditional samples")
-    conditions_table.at[index, 'num_samples'] = cond_df.count()
-
-    res = cond_df.approxQuantile('end2end_delay',qrange_list,0)
-    print(f"- Conditional quantiles: {res}")
-    quantiles_table.loc[len(quantiles_table)] = list(res)
+    print(f"Conditions table: \n{conditions_table}")
 
 
-results = pd.concat([conditions_table, quantiles_table], axis=1)
+    for index, row in conditions_table.iterrows():
+        print(f"-------- Calculating condition {index+1}/{len(conditions_table)}: {row.values}")
 
-print(tabulate(results, headers='keys', tablefmt='psql'))
+        cond_df = df.alias('cond_df')
+        for key in row.keys():
+            if key in conditions_conf.keys():
+                cond_df = cond_df.where( df[key]>= row[key][0] ).where( df[key] < row[key][1] )
 
-results.to_csv(results_path + 'quantiles.csv')
+        print(f"- Pyspark found {cond_df.count()} conditional samples")
+        conditions_table.at[index, 'num_samples'] = cond_df.count()
+
+        res = cond_df.approxQuantile('end2end_delay',qrange_list,0)
+        print(f"- Conditional quantiles: {res}")
+        quantiles_table.loc[len(quantiles_table)] = list(res)
+
+
+    results = pd.concat([conditions_table, quantiles_table], axis=1)
+
+    #print(tabulate(results, headers='keys', tablefmt='psql'))
+
+    results.to_csv(project_path + '/quantiles.csv')
