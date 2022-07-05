@@ -14,9 +14,12 @@ results_path = 'results/'
 
 def init_spark():
 
+    # "spark.driver.memory" must not exceed the total memory of the device: SWAP + RAM
+
     spark = SparkSession.builder \
        .appName("LoadParquets") \
-       .config("spark.driver.memory", "112g") \
+       .config("spark.executor.memory","6g") \
+       .config("spark.driver.memory", "70g") \
        .config("spark.driver.maxResultSize",0) \
        .getOrCreate()
 
@@ -84,7 +87,7 @@ print('Quantile range list:')
 print(qrange_list)
 
 # open the dataframe from parquet files
-project_folder = "projects/ar_benchmark/" 
+project_folder = "projects/tail_benchmark/" 
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 for project_path in project_paths:
