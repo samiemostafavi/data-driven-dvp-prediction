@@ -2,6 +2,7 @@ import numpy as np
 from tensorflow import keras
 import tensorflow as tf
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import rand
 from petastorm import TransformSpec
 import os
 from os.path import dirname, abspath
@@ -37,12 +38,25 @@ strdtype = 'float64'
 
 condition_labels = ['queue_length', 'longer_delay_prob']
 y_label = 'end2end_delay'
+ensembles = 10
+
+dataset_size = 1024*120 # total will be the_number_of_files * file_samples_size
+batch_size = 1024
+train_val_split = {
+    'fraction': [0.9, 0.1],
+    'seed': 12345,
+}
 
 # open the dataframe from parquet files
 project_folder = "projects/tail_benchmark/" 
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 for project_path in project_paths:
+    logger.info(f"Starting simulation path: {project_path}")
+    
+    predictors_path = project_path + '/predictors/'
+    os.makedirs(predictors_path, exist_ok=True)
+
     records_path = project_path + '/records/'
     all_files = os.listdir(records_path)
     files = []
@@ -53,19 +67,21 @@ for project_path in project_paths:
     # read all files into Spark df
     df=spark.read.parquet(*files)
 
-    dataset_size = 1024*120 # total will be the_number_of_files * file_samples_size
-    batch_size = 1024
-    df = df.limit(dataset_size)
-    df_train, df_val = df.randomSplit([0.9, 0.1], seed=12345)
+    # take desired number of records for learning
+    df = df.sample(
+        withReplacement=False, 
+        fraction=dataset_size/df.count(),
+    )
+    df_train, df_val = df.randomSplit(train_val_split['fraction'], seed=train_val_split['seed'])
+
+    # dataset partitioning and making the converters
     # Make sure the number of partitions is at least the number of workers which is required for distributed training.
     NUM_WORKERS = 1
     df_train = df_train.repartition(NUM_WORKERS)
     df_val = df_val.repartition(NUM_WORKERS)
-
     converter_train = make_spark_converter(df_train)
     converter_val = make_spark_converter(df_val)
-
-    logger.info(f"Parquet files loaded, train sampels: {len(converter_train)}, validation samples: {len(converter_val)}")
+    logger.info(f"Dataset loaded, train sampels: {len(converter_train)}, validation samples: {len(converter_val)}")
 
     def transform_row(pd_batch):
         """
@@ -90,56 +106,57 @@ for project_path in project_paths:
         selected_fields=[*condition_labels,'y_input'],
     )
 
-    # initiate the non conditional predictor
-    model = ConditionalGammaEVM(
-        x_dim=condition_labels,
-        #centers= 8,
-        hidden_sizes = (16, 16),
-        dtype = strdtype,
-        bayesian = False,
-        #batch_size = 1024,
-    )
+    for num_ensemble in range(ensembles):
 
-    with converter_train.make_tf_dataset(
-        transform_spec=transform_spec_fn, 
-        batch_size=batch_size,
-    ) as train_dataset, \
-        converter_val.make_tf_dataset(
-        transform_spec=transform_spec_fn, 
-        batch_size=batch_size,
-    ) as val_dataset:
-
-        # tf.keras only accept tuples, not namedtuples
-        def map_fn(x):
-            x_dict = {}
-            for idx,cond in enumerate(condition_labels):
-                x_dict = {**x_dict, cond:x[idx]}
-            return ({**x_dict, 'y_input':x.y_input},x.y_input)
-
-        train_dataset = train_dataset.map(map_fn)
-        steps_per_epoch = len(converter_train) // batch_size
-
-        val_dataset = val_dataset.map(map_fn)
-        validation_steps = max(1, len(converter_val) // batch_size)
-
-
-        model._pl_training_model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.01), 
-            loss=model.loss,
+        # initiate the non conditional predictor
+        model = ConditionalGammaEVM(
+            x_dim=condition_labels,
+            #centers= 8,
+            hidden_sizes = (16, 16),
+            dtype = strdtype,
+            bayesian = False,
+            #batch_size = 1024,
         )
 
-        logger.info(f"steps_per_epoch: {steps_per_epoch}, validation_steps: {validation_steps}")
+        with converter_train.make_tf_dataset(
+            transform_spec=transform_spec_fn, 
+            batch_size=batch_size,
+        ) as train_dataset, \
+            converter_val.make_tf_dataset(
+            transform_spec=transform_spec_fn, 
+            batch_size=batch_size,
+        ) as val_dataset:
 
-        hist = model._pl_training_model.fit(
-            train_dataset, 
-            steps_per_epoch=steps_per_epoch,
-            epochs=100,
-            validation_data=val_dataset,
-            validation_steps=validation_steps,
-            verbose=2
-        )
+            # tf.keras only accept tuples, not namedtuples
+            # map the dataset to the desired tf.keras input in _pl_training_model
+            def map_fn(x):
+                x_dict = {}
+                for idx,cond in enumerate(condition_labels):
+                    x_dict = {**x_dict, cond:x[idx]}
+                return ({**x_dict, 'y_input':x.y_input},x.y_input)
 
-        model.save(project_path+"/trained_model.h5")
+            train_dataset = train_dataset.map(map_fn)
+            steps_per_epoch = len(converter_train) // batch_size
 
-        logger.info(f"Model saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
-        logger.info(f"Parameters: {model.get_parameters()}")
+            val_dataset = val_dataset.map(map_fn)
+            validation_steps = max(1, len(converter_val) // batch_size)
+
+            model._pl_training_model.compile(
+                optimizer=keras.optimizers.Adam(learning_rate=0.01), 
+                loss=model.loss,
+            )
+
+            logger.info(f"steps_per_epoch: {steps_per_epoch}, validation_steps: {validation_steps}")
+
+            hist = model._pl_training_model.fit(
+                train_dataset, 
+                steps_per_epoch=steps_per_epoch,
+                epochs=100,
+                validation_data=val_dataset,
+                validation_steps=validation_steps,
+                verbose=1,
+            )
+
+            model.save(predictors_path+f"model_{num_ensemble}.h5")
+
+            logger.info(f"Model {num_ensemble} saved, bayesian: {model.bayesian}, batch_size: {model.batch_size}")
