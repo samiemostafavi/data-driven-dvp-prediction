@@ -38,8 +38,8 @@ tfdtype = tf.float64
 strdtype = 'float64'
 
 training_params = {
-    'dataset_size': 60*1024*1024,
-    'batch_size': 1024*240,
+    'dataset_size': 60*1024, #60*1024*1024
+    'batch_size': 1024, #1024*240
     'train_val_split': {
         'fraction': [0.99, 0.01],
         'seed': 12345,
@@ -77,7 +77,7 @@ models_conf = [
 ]
 
 # open the dataset
-project_folder = "projects/tail_benchmark/"
+project_folder = "projects/ar_benchmark/"
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 #project_paths = [
@@ -98,7 +98,7 @@ for project_path in project_paths:
             files.append(records_path + f)
 
     # read all files into Spark df
-    df=spark.read.parquet(*files)
+    main_df=spark.read.parquet(*files)
 
 
     for model_conf in models_conf:
@@ -106,9 +106,9 @@ for project_path in project_paths:
         training_params = model_conf['training_params']
 
         # take the desired number of records for learning
-        df = df.sample(
+        df = main_df.sample(
             withReplacement=False, 
-            fraction=training_params['dataset_size']/df.count(),
+            fraction=training_params['dataset_size']/main_df.count(),
         )
         df_train, df_val = df.randomSplit(
             training_params['train_val_split']['fraction'], 
@@ -149,7 +149,7 @@ for project_path in project_paths:
         model_type = model_conf['type']
         ensembles = model_conf['ensembles']
         condition_labels = model_conf['condition_labels']
-        training_rounds = training_params['training_rounds']
+        training_rounds = training_params['rounds']
         batch_size = training_params['batch_size']
         for num_ensemble in range(ensembles):
 
