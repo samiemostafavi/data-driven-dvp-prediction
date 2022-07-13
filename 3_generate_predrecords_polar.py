@@ -3,9 +3,11 @@ import pandas as pd
 from pathlib import Path
 from functools import reduce
 import polars as pl
-from pr3d.de import ConditionalGammaEVM
+from pr3d.de import ConditionalGammaEVM, ConditionalGammaMixtureEVM, ConditionalGaussianMM
 from os.path import dirname, abspath
 import tensorflow as tf
+import numpy as np
+import json
 import warnings
 from loguru import logger
 import glob
@@ -42,13 +44,28 @@ for project_path in project_paths:
     os.makedirs(records_pred_path, exist_ok=True)
     for idx,model_addr in enumerate(files):
         logger.info(f"Working on {Path(model_addr).stem} of simulation {project_path}")
+        with open(predictors_path + Path(model_addr).stem + '.json') as json_file:
+            pr_model_json = json.load(json_file)
 
         # draw predictions
         # load the non conditional predictor
-        pr_model = ConditionalGammaEVM(
-            h5_addr = model_addr,
-        )
-        rng = tf.random.Generator.from_seed(12345)
+        model_type = pr_model_json['type']
+        if model_type == 'gmm':
+            pr_model = ConditionalGaussianMM(
+                h5_addr = model_addr,
+            )
+            rng = np.random.default_rng(seed=12345)
+        elif model_type == 'gevm':
+            pr_model = ConditionalGammaEVM(
+                h5_addr = model_addr,
+            )
+            rng = tf.random.Generator.from_seed(12345)
+        elif model_type == 'gmevm':
+            pr_model = ConditionalGammaMixtureEVM(
+                h5_addr = model_addr,
+            )
+            rng = np.random.default_rng(seed=12345)
+            
         batch_size = 1000000
 
         df=pl.read_parquet(records_path+"*.parquet")

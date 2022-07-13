@@ -38,7 +38,7 @@ tfdtype = tf.float64
 strdtype = 'float64'
 
 # open the dataset
-project_folder = "projects/ar_benchmark/"
+project_folder = "projects/tail_benchmark/"
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 training_params = {
