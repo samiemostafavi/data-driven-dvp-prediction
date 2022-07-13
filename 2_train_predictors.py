@@ -37,9 +37,13 @@ npdtype = np.float64
 tfdtype = tf.float64
 strdtype = 'float64'
 
+# open the dataset
+project_folder = "projects/ar_benchmark/"
+project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
+
 training_params = {
-    'dataset_size': 60*1024, #60*1024*1024
-    'batch_size': 1024, #1024*240
+    'dataset_size': 60*1024*1024,
+    'batch_size': 1024*240,
     'train_val_split': {
         'fraction': [0.99, 0.01],
         'seed': 12345,
@@ -75,10 +79,6 @@ models_conf = [
         'training_params': training_params,
     },
 ]
-
-# open the dataset
-project_folder = "projects/ar_benchmark/"
-project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 #project_paths = [
 #    'projects/tail_benchmark/p1_results',
