@@ -8,7 +8,7 @@ import matplotlib.ticker as mticker
 import seaborn as sns
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import spark_partition_id
-from pr3d.de import ConditionalGammaEVM
+from pr3d.de import ConditionalGammaEVM, ConditionalGaussianMM, ConditionalGammaMixtureEVM
 from pyspark.sql.types import StructType, StructField, FloatType
 import tensorflow as tf
 import warnings
@@ -37,21 +37,22 @@ spark,sc = init_spark()
 
 
 # open the ground truth written in the csv files
-project_path = 'projects/tail_benchmark/p1_results'
+project_path = 'projects/tail_benchmark/p4_results'
 condition_labels = ['queue_length', 'longer_delay_prob']
 key_label = 'end2end_delay'
 conditions = {
-    'queue_length':(0.0,2.0),
-    'longer_delay_prob' :(0.0,0.2),
+    'queue_length':(6.0,8.0),
+    'longer_delay_prob' :(0.8,1.0),
 }
 cond_dataset_limit = 300000
 quantiles_file_addr = project_path + '/quantiles.csv'
-model_addr = project_path + '/predictors/' + 'model_0.h5'
+model_addr = project_path + '/predictors/' + 'gmm_model_2.h5'
 # load the non conditional predictor
-pr_model = ConditionalGammaEVM(
+pr_model = ConditionalGaussianMM( #ConditionalGaussianMM
     h5_addr = model_addr,
 )
-rng = tf.random.Generator.from_seed(12345)
+#rng = tf.random.Generator.from_seed(12345)
+rng = np.random.default_rng(seed=12345)
 batch_size = 30000
 logger.info(f"Predictor: {Path(model_addr).stem} is loaded.")
 
@@ -191,7 +192,7 @@ ax.set_title(sentence)
 
 # figure 2
 fig.tight_layout()
-plt.savefig('validation_0.png')
+plt.savefig('validation_p24_0.png')
 
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
@@ -236,4 +237,4 @@ ax.grid()
 ax.legend()
 
 fig.tight_layout()
-plt.savefig('validation_1.png')
+plt.savefig('validation_p24_1.png')
