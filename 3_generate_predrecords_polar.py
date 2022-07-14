@@ -3,9 +3,13 @@ import pandas as pd
 from pathlib import Path
 from functools import reduce
 import polars as pl
+
+# On the servers that we work with, using CPU is much faster
+import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
+
 from pr3d.de import ConditionalGammaEVM, ConditionalGammaMixtureEVM, ConditionalGaussianMM
 from os.path import dirname, abspath
-import tensorflow as tf
 import numpy as np
 import json
 import warnings
@@ -19,7 +23,7 @@ project_paths = [project_folder+name for name in os.listdir(project_folder) if o
 
 # limit the simulations
 #project_paths = ['projects/tail_benchmark/p1_results','projects/tail_benchmark/p3_results','projects/tail_benchmark/p4_results','projects/tail_benchmark/pz_results']
-#project_paths = ['projects/tail_benchmark/p1_results']
+project_paths = ['projects/tail_benchmark/p1_results']
 
 condition_labels = ['queue_length', 'longer_delay_prob']
 key_label = 'end2end_delay'
@@ -66,7 +70,7 @@ for project_path in project_paths:
             )
             rng = np.random.default_rng(seed=12345)
             
-        batch_size = 1000000
+        batch_size = 100000
 
         df=pl.read_parquet(records_path+"*.parquet")
         df = df.select(condition_labels)
