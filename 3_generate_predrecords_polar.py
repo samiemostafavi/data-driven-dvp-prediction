@@ -23,7 +23,7 @@ project_paths = [project_folder+name for name in os.listdir(project_folder) if o
 
 # limit the simulations
 #project_paths = ['projects/tail_benchmark/p1_results','projects/tail_benchmark/p3_results','projects/tail_benchmark/p4_results','projects/tail_benchmark/pz_results']
-project_paths = ['projects/tail_benchmark/p1_results']
+#project_paths = ['projects/tail_benchmark/p1_results']
 
 condition_labels = ['queue_length', 'longer_delay_prob']
 key_label = 'end2end_delay'
@@ -54,23 +54,21 @@ for project_path in project_paths:
         # draw predictions
         # load the non conditional predictor
         model_type = pr_model_json['type']
+        seed = 12345
         if model_type == 'gmm':
             pr_model = ConditionalGaussianMM(
                 h5_addr = model_addr,
             )
-            rng = np.random.default_rng(seed=12345)
         elif model_type == 'gevm':
             pr_model = ConditionalGammaEVM(
                 h5_addr = model_addr,
             )
-            rng = tf.random.Generator.from_seed(12345)
         elif model_type == 'gmevm':
             pr_model = ConditionalGammaMixtureEVM(
                 h5_addr = model_addr,
             )
-            rng = np.random.default_rng(seed=12345)
             
-        batch_size = 100000
+        batch_size = 1000000
 
         df=pl.read_parquet(records_path+"*.parquet")
         df = df.select(condition_labels)
@@ -89,7 +87,7 @@ for project_path in project_paths:
 
             pred_np = pr_model.sample_n(
                 x_input_dict,
-                rng = rng,
+                seed = seed,
             )
 
             doc = pl.DataFrame({**x_input_dict, key_label:pred_np})
