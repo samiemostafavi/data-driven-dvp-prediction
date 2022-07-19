@@ -46,13 +46,12 @@ conditions = {
 }
 cond_dataset_limit = 300000
 quantiles_file_addr = project_path + '/quantiles.csv'
-model_addr = project_path + '/predictors/' + 'gmm_model_2.h5'
+model_addr = project_path + '/predictors/' + 'gmevm_model_0.h5'
 # load the non conditional predictor
-pr_model = ConditionalGaussianMM( #ConditionalGaussianMM
+pr_model = ConditionalGammaMixtureEVM( #ConditionalGaussianMM
     h5_addr = model_addr,
 )
-#rng = tf.random.Generator.from_seed(12345)
-rng = np.random.default_rng(seed=12345)
+seed = 12345
 batch_size = 30000
 logger.info(f"Predictor: {Path(model_addr).stem} is loaded.")
 
@@ -132,7 +131,7 @@ for each_df in total_partition:
 
     pred_np = pr_model.sample_n(
         x_input_dict,
-        rng = rng,
+        seed = seed,
     )
     doc = spark.createDataFrame(pd.DataFrame({**x_input_dict, key_label:pred_np}))
     pred_df = pred_df.union(doc)
@@ -192,7 +191,7 @@ ax.set_title(sentence)
 
 # figure 2
 fig.tight_layout()
-plt.savefig('validation_p24_0.png')
+plt.savefig('validation_p26_0.png')
 
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
@@ -237,4 +236,4 @@ ax.grid()
 ax.legend()
 
 fig.tight_layout()
-plt.savefig('validation_p24_1.png')
+plt.savefig('validation_p26_1.png')
