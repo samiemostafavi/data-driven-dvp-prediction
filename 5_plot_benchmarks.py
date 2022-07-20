@@ -10,6 +10,7 @@ import numpy as np
 import math
 import matplotlib.ticker as mticker
 import re
+from loguru import logger
 
 # open the ground truth written in the csv files
 project_folder = "projects/tail_benchmark/"
@@ -23,7 +24,7 @@ models = []
 for project_path in project_paths:
     records_path = project_path + '/records/'
 
-    # read the quantiles file
+    # read the empirical quantiles file
     quantiles_file_addr = None
     for f in os.listdir(project_path):
         if f.endswith(".csv"):
@@ -32,16 +33,24 @@ for project_path in project_paths:
     emp_quantiles_pd = pd.read_csv(quantiles_file_addr)
     emp_quantiles_pds.append(emp_quantiles_pd)
 
-    # read the quantiles file
+    # read the predicted quantiles file
+    # there can be multiple files for each results folder
+    pds_tmp = []
     quantiles_file_addr = None
     for f in os.listdir(project_path + '/records_predicted/'):
         if f.endswith(".csv"):
             quantiles_file_addr = project_path + '/records_predicted/' + f
-    assert quantiles_file_addr is not None
-    pred_quantiles_pd = pd.read_csv(quantiles_file_addr)
-    pred_quantiles_pds.append(pred_quantiles_pd)
+            with open(project_path + '/predictors/' + Path(quantiles_file_addr).stem + '.json') as json_file:
+                pds_tmp.append({
+                    'name' : Path(quantiles_file_addr).stem,
+                    'model_json' : json.load(json_file),
+                    'prediction_csv' : pd.read_csv(quantiles_file_addr),
+                })
 
-    # read the model file to figure out what is different
+    assert quantiles_file_addr is not None
+    pred_quantiles_pds.append(pds_tmp)
+    
+    # read the experiment model file to figure out what is different
     model_json = None
     for f in os.listdir(records_path):
         if f.endswith(".json"):
@@ -51,7 +60,14 @@ for project_path in project_paths:
     assert model_json is not None
     models.append(model_json)
 
-print(f"{len(emp_quantiles_pds)} simulation and prediction results found in {project_folder}.")
+logger.info(f"{len(emp_quantiles_pds)} simulation results found in {project_folder}.")
+pretty = []
+for idx,item in enumerate(pred_quantiles_pds):
+    for pdict in item:
+        pretty.append((idx, pdict['name']))
+
+logger.info(f"Here are the predictors discovered for each of the simulations: {pretty}")
+
 #print(dataframes.keys())
 #print(models)
 
@@ -72,7 +88,8 @@ keys_list = list(result.keys())[0] \
     .replace("]"," ").split()
 keys_list = list(map(lambda x:int(x) if x.isdigit() else x,keys_list))
 keys_list = keys_list[1:]
-print(f"The simulation parameter keys that I have found is: {keys_list}")
+logger.info(f"The simulation parameter keys that I have found is: {keys_list}")
+
 
 simulation_results = {}
 for idx,model in enumerate(models):
@@ -101,6 +118,10 @@ for key in sample['emp_quantile_pd'].keys():
         continue
     quantile_labels.append((key,np.float64(key)))
 
+# limit
+#quantile_labels = quantile_labels[:-2]
+logger.info(f"Quantile labels are {quantile_labels}")
+
 # find conditions and their indexes in emp_quantiles_pd
 # convert condition string e.g. (2.0, 4.0) to tuple[float]
 sample_emp_quant_pd = simulation_results[sample_sim_key]['emp_quantile_pd']
@@ -115,9 +136,13 @@ for idx in range(len(sample_emp_quant_pd)):
         ] for c,label in enumerate(condition_labels)
     })
 
+logger.info(f"Benchmark conditions: {conditions}, total number of conditions: {len(conditions)}")
+
+
 # plot the quantiles
 n = 5
 m = 5
+assert n*m == len(conditions)
 fig, axes = plt.subplots(nrows=n, ncols=m, figsize=(m*7,n*5))
 minx = float('inf')
 maxx = 0
@@ -129,18 +154,20 @@ for i in range(n):
             emp_quantiles_pd = simulation_results[key]['emp_quantile_pd'][[t[0] for t in quantile_labels]]
             emp_quantile_values = emp_quantiles_pd.loc[idx, :].values.tolist()
 
-            pred_quantiles_pd = simulation_results[key]['pred_quantile_pd'][[t[0] for t in quantile_labels]]
-            pred_quantile_values = pred_quantiles_pd.loc[idx, :].values.tolist()
+            for pd_dict in simulation_results[key]['pred_quantile_pd']:
 
-            ax.plot(
-                1.00-np.array([t[1] for t in quantile_labels]),
-                np.absolute(np.array(emp_quantile_values)-np.array(pred_quantile_values)),
-                marker='.', 
-                label= f"{simulation_results[key]['value_name']}={simulation_results[key]['value']}",
-                #linestyle = 'None',
-            )
-        
-            #print(simulation_results[key]['dataframe'].keys())
+                pred_quantiles_pd = pd_dict['prediction_csv'][[t[0] for t in quantile_labels]]
+                pred_quantile_values = pred_quantiles_pd.loc[idx, :].values.tolist()
+
+                ax.plot(
+                    1.00-np.array([t[1] for t in quantile_labels]),
+                    np.absolute(np.array(emp_quantile_values)-np.array(pred_quantile_values)),
+                    marker='.', 
+                    label= f"{pd_dict['name']},{simulation_results[key]['value_name']}={simulation_results[key]['value']}",
+                    #linestyle = 'None',
+                )
+            
+                #print(simulation_results[key]['dataframe'].keys())
 
 for i in range(n):
     for j in range(m):
@@ -166,5 +193,5 @@ for i in range(n):
         ax.set_title(sentence)
 
 fig.tight_layout()
-plt.savefig('smile2.png')
+plt.savefig('smile4.png')
 
