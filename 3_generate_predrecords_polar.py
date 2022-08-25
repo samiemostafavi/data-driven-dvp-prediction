@@ -23,7 +23,7 @@ project_paths = [project_folder+name for name in os.listdir(project_folder) if o
 
 # limit the simulations
 #project_paths = ['projects/tail_benchmark/p1_results','projects/tail_benchmark/p3_results','projects/tail_benchmark/p4_results','projects/tail_benchmark/pz_results']
-#project_paths = ['projects/tail_benchmark/p4_results']
+project_paths = ['projects/tail_benchmark/p4_results']
 
 condition_labels = ['queue_length', 'longer_delay_prob']
 key_label = 'end2end_delay'
@@ -42,7 +42,7 @@ for project_path in project_paths:
             files.append(predictors_path + f)
 
     # limit the model
-    #files = [files[1]]
+    files = [files[1]]
 
     records_pred_path= project_path + '/records_predicted/'
     os.makedirs(records_pred_path, exist_ok=True)

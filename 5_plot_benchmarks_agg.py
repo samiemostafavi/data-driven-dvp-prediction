@@ -193,5 +193,5 @@ for i in range(n):
         ax.set_title(sentence)
 
 fig.tight_layout()
-plt.savefig('smile4.png')
+plt.savefig('new_smile2.png')
 

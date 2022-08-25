@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict
 from pydantic import PrivateAttr
 from qsimpy.random import RandomProcess
+from loguru import logger
 
 
 def mixture_samples(
@@ -43,20 +44,27 @@ class HeavyTailGamma(RandomProcess):
     batch_size : int = None
 
     # private parameters for batch sample generation
-    _pregenerated_samples : list[np.float64] = PrivateAttr()
-    _counter : int = PrivateAttr()
+    _pregenerated_samples : list[np.float64] = PrivateAttr(default=[])
+    _counter : int = PrivateAttr(default=0)
 
     def prepare_for_run(self):
         self._rng = tf.random.Generator.from_seed(self.seed)
         if self.batch_size is not None:
+            logger.info(f"HeavyTailGamma random process generating {self.batch_size} samples")
             self._pregenerated_samples = self.sample_n(self.batch_size)
-            self._counter = 0
 
     def sample(self):
         if self.batch_size is not None:
-            assert self._counter < self.batch_size
-            res = self._pregenerated_samples[self._counter]
-            self._counter=self._counter+1
+            if self._counter < self.batch_size:
+                res = self._pregenerated_samples[self._counter]
+                self._counter=self._counter+1
+            else:
+                # generate another batch of samples
+                self._pregenerated_samples = self.sample_n(self.batch_size)
+                self._counter=0
+                res = self._pregenerated_samples[self._counter]
+                self._counter=self._counter+1
+                logger.info(f"HeavyTailGamma random process refilled the samples, {self.batch_size} more.")
             return res
         else:
             return self.sample_n(1)[0]

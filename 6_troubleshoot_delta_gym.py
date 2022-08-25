@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -36,71 +37,97 @@ def init_spark():
 spark,sc = init_spark()
 
 
-# open the ground truth written in the csv files
-project_path = 'projects/tail_benchmark/p4_results'
-condition_labels = ['queue_length', 'longer_delay_prob']
+# open the ground truth empirical datasets
+project_path = 'projects/qlen_benchmark/'
+records_path = 'projects/qlen_benchmark/records'
+condition_labels = ['queue_length']
 key_label = 'end2end_delay'
 conditions = {
-    'queue_length':(4.0,6.0),
-    'longer_delay_prob' :(0.0,0.2),
+    '0_results':0, 
+    '1_results':1, 
+    '2_results':2, 
+    '3_results':3, 
+    '4_results':4, 
+    '5_results':5,
+    '6_results':6, 
+    '7_results':7, 
+    '8_results':8, 
+    '9_results':9, 
+    '10_results':10, 
+    '11_results':11,
+    '12_results':12, 
+    '13_results':13, 
+    '14_results':14,
 }
-quantiles_file_addr = project_path + '/quantiles.csv'
+
+
+df_arr = {}
+for results_dir in conditions:
+    q_len = conditions[results_dir]
+    cond_records_path = records_path + '/' + results_dir
+    all_files = os.listdir(cond_records_path)
+    files = []
+    for f in all_files:
+        if f.endswith(".parquet"):
+            files.append(cond_records_path + '/'  + f)
+
+    df=spark.read.parquet(*files)
+    logger.info(f"Parquet files in {cond_records_path} are loaded.")
+    logger.info(f"Total number of samples in this empirical dataset: {df.count()}")
+    df_arr[str(q_len)] = df
+
+# open the predictor
 model_addr = project_path + '/predictors/' + 'gmevm_model_0.h5'
 # load the non conditional predictor
 pr_model = ConditionalGammaMixtureEVM( #ConditionalGaussianMM
     h5_addr = model_addr,
 )
-seed = 12345
-batch_size = 30000
 logger.info(f"Predictor: {Path(model_addr).stem} is loaded.")
 
 
-# open the empirical dataset
-records_path = project_path + '/records/'
-all_files = os.listdir(records_path)
-files = []
-for f in all_files:
-    if f.endswith(".parquet"):
-        files.append(records_path + f)
+# open JSON troubleshoot file
+debug_json_addr = project_path + '/delta_debug_big.json'
+with open(debug_json_addr,'r') as json_file:
+    debug_dict = json.loads(json_file.read())
 
-df=spark.read.parquet(*files)
-logger.info(f"Project path: {project_path} is loaded.")
-logger.info(f"Total number of samples in the empirical dataset: {df.count()}")
+logger.info(F"Opened JSON file with {len(debug_dict)} drop records.")
+total_drops = 0
+for idx,item in enumerate(debug_dict):
+    logger.info(f"Drop {idx}:")
+    for dict_key in item.keys():
+        logger.info(f"{dict_key}:")
+        dict_df = pd.DataFrame(item[dict_key])
+        # iterate over the rows
+        emp_success_probs = []
+        for row_idx, row in dict_df.iterrows():
+            queue_length = row['queue_length']
+            delay_budget = row['delay_budget']
 
-# get the conditional dataset
-cond_df = df.alias('cond_df')
-for cond_key in conditions.keys():
-        cond_df = cond_df \
-            .where( cond_df[cond_key]>= conditions[cond_key][0] ) \
-            .where( cond_df[cond_key] < conditions[cond_key][1] )
+            # get the conditional dataset
+            cond_df = df_arr[str(int(queue_length))].alias('cond_df')
+            total_count = cond_df.count()
+            cond_df = cond_df \
+                .where( cond_df['end2end_delay'] <= delay_budget )
+            success_count = cond_df.count()
+            emp_success_prob = success_count/total_count
 
-cond_df = cond_df.sample(float(1.00),seed = 12345)
-cond_df_nodelay = cond_df.select(*condition_labels)
-logger.info(f"Applying conditions to the dataset.")
-logger.info(f"Number of samples in the conditional empirical dataset: {cond_df.count()}")
+            logger.info(f"Row {row_idx}, queue_length: {queue_length}, total samples {total_count}, successful samples {success_count}, empirical success_prob: {emp_success_prob:.3f}, predicted success_prob: {row['success_prob']:.3f}")
 
-# load empirical quantiles from CSV file
-emp_quantiles_pd = pd.read_csv(quantiles_file_addr)
-logger.info(f"Empirical quantiles loaded from the CSV file {quantiles_file_addr}.")
-# find quantile labels
-quantile_labels = []
-for key in emp_quantiles_pd.keys():
-    try:
-        float(key)
-    except:
-        continue
-    quantile_labels.append((key,np.float64(key)))
-logger.info(f"Quantile points to benchmark the predictors: {[q[1] for q in quantile_labels]}")
-# find condition index
-for idx, key in enumerate(conditions.keys()):
-    if idx == 0:
-        rows = emp_quantiles_pd[ (emp_quantiles_pd[key] == str(conditions[key])) ]
-    else:
-        rows = rows[ (emp_quantiles_pd[key] == str(conditions[key])) ]
+            emp_success_probs.append(emp_success_prob)
+            #row['delay_budget']
+        
+        dict_df['emp_success_prob'] = emp_success_probs
+        item[dict_key] = dict_df.to_dict()
+    
+    s1 = sum(list(item['orig']['emp_success_prob'].values()))
+    s2 = sum(list(item['dropped']['emp_success_prob'].values()))
+    logger.info(f"Dropping decision {idx}, s1: {s1}, s2: {s2}, delta: {s2-s1}, DROP: {s2>s1} ")
+    if s2>s1:
+        total_drops += 1
 
-assert len(rows) == 1
-condition_idx = rows.index[0]
-logger.info(f"Condition index to refer to in the CSV file: {condition_idx}")
+logger.info(f"Total drops: {total_drops}")
+
+exit(0)
 
 # draw prediction samples
 # get pyspark dataframe in batches [https://stackoverflow.com/questions/60645256/how-do-you-get-batches-of-rows-from-spark-using-pyspark]
@@ -136,17 +163,16 @@ for each_df in total_partition:
     pred_df = pred_df.union(doc)
     i = i+1
 
-print(pred_df.count())
-print(pred_df.show())
+logger.info(F"Generated {pred_df.count()} prediction samples.")
+#print(pred_df.count())
+#print(pred_df.show())
+
 
 # figure 1
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
 minx = float('inf')
 maxx = 0.0
-quantiles_df = emp_quantiles_pd[[t[0] for t in quantile_labels]]
-# read quantile values from the CSV dataframe
-emp_quantile_values = quantiles_df.loc[condition_idx, :].values.tolist()
 minx = min(minx,*emp_quantile_values)
 maxx = max(maxx,*emp_quantile_values)
 # calculate the prediction quantile values
@@ -181,7 +207,7 @@ ax.legend()
 
 # figure out the title 
 sentence = [
-    f"{label}={emp_quantiles_pd.loc[condition_idx, label]}" 
+    f"{label}={conditions[label]}" 
         for c,label in enumerate(condition_labels)
 ]
 sentence = ','.join(sentence)
@@ -190,7 +216,7 @@ ax.set_title(sentence)
 
 # figure 2
 fig.tight_layout()
-plt.savefig('validation_p29_0.png')
+plt.savefig('validation_p30_0.png')
 
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
@@ -223,10 +249,11 @@ sns.histplot(
 
 # figure out the title 
 sentence = [
-    f"{label}={emp_quantiles_pd.loc[condition_idx, label]}" 
+    f"{label}={conditions[label]}" 
         for c,label in enumerate(condition_labels)
 ]
 sentence = ','.join(sentence)
+
 ax.set_xlim(0,list(cond_df.approxQuantile(key_label,[0.9],0))[0])
 ax.set_title(sentence)
 ax.set_xlabel('Latency')
@@ -235,4 +262,4 @@ ax.grid()
 ax.legend()
 
 fig.tight_layout()
-plt.savefig('validation_p29_1.png')
+plt.savefig('validation_p30_1.png')

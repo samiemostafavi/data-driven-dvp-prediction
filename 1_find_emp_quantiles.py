@@ -87,8 +87,11 @@ print('Quantile range list:')
 print(qrange_list)
 
 # open the dataframe from parquet files
-project_folder = "projects/tail_benchmark/" 
+project_folder = "projects/p1_nolimit_benchmark/" 
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
+
+# limit
+#project_paths = ['projects/tail_benchmark/p1_results']
 
 for project_path in project_paths:
 
@@ -110,7 +113,7 @@ for project_path in project_paths:
     conditions_conf, conditions_table =  make_conditions_dict({
             'queue_length':{
                 'n':5,
-                'max':10,
+                'max':15,
             },
             'longer_delay_prob':{
                 'n':5,

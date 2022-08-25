@@ -42,7 +42,7 @@ condition_labels = ['queue_length', 'longer_delay_prob']
 key_label = 'end2end_delay'
 conditions = {
     'queue_length':(4.0,6.0),
-    'longer_delay_prob' :(0.0,0.2),
+    'longer_delay_prob' :(0.99,1.0),
 }
 quantiles_file_addr = project_path + '/quantiles.csv'
 model_addr = project_path + '/predictors/' + 'gmevm_model_0.h5'
@@ -51,7 +51,7 @@ pr_model = ConditionalGammaMixtureEVM( #ConditionalGaussianMM
     h5_addr = model_addr,
 )
 seed = 12345
-batch_size = 30000
+batch_size = 1000000
 logger.info(f"Predictor: {Path(model_addr).stem} is loaded.")
 
 
@@ -67,7 +67,7 @@ df=spark.read.parquet(*files)
 logger.info(f"Project path: {project_path} is loaded.")
 logger.info(f"Total number of samples in the empirical dataset: {df.count()}")
 
-# get the conditional dataset
+# get the conditional empirical dataset
 cond_df = df.alias('cond_df')
 for cond_key in conditions.keys():
         cond_df = cond_df \
@@ -79,28 +79,16 @@ cond_df_nodelay = cond_df.select(*condition_labels)
 logger.info(f"Applying conditions to the dataset.")
 logger.info(f"Number of samples in the conditional empirical dataset: {cond_df.count()}")
 
-# load empirical quantiles from CSV file
-emp_quantiles_pd = pd.read_csv(quantiles_file_addr)
-logger.info(f"Empirical quantiles loaded from the CSV file {quantiles_file_addr}.")
-# find quantile labels
-quantile_labels = []
-for key in emp_quantiles_pd.keys():
-    try:
-        float(key)
-    except:
-        continue
-    quantile_labels.append((key,np.float64(key)))
-logger.info(f"Quantile points to benchmark the predictors: {[q[1] for q in quantile_labels]}")
-# find condition index
-for idx, key in enumerate(conditions.keys()):
-    if idx == 0:
-        rows = emp_quantiles_pd[ (emp_quantiles_pd[key] == str(conditions[key])) ]
-    else:
-        rows = rows[ (emp_quantiles_pd[key] == str(conditions[key])) ]
-
-assert len(rows) == 1
-condition_idx = rows.index[0]
-logger.info(f"Condition index to refer to in the CSV file: {condition_idx}")
+# Quantile range list
+N_qt=10
+qlim = [0.00001, 0.1]; #0.00001 (real tail), 0.99999 (close to zero)
+qrange_list = [1-i for i in np.logspace(math.log10( qlim[1] ), math.log10( qlim[0] ) , num=N_qt)]
+logger.info(F'Desired quantile list generated: {qrange_list}')
+emp_quantile_values = cond_df.approxQuantile('end2end_delay',qrange_list,0)
+logger.info(F'Empirical dataset quantile values: {emp_quantile_values}')
+quantile_labels = [
+    (str(q),q) for q in qrange_list
+]
 
 # draw prediction samples
 # get pyspark dataframe in batches [https://stackoverflow.com/questions/60645256/how-do-you-get-batches-of-rows-from-spark-using-pyspark]
@@ -136,17 +124,16 @@ for each_df in total_partition:
     pred_df = pred_df.union(doc)
     i = i+1
 
-print(pred_df.count())
-print(pred_df.show())
+logger.info(F"Generated {pred_df.count()} prediction samples.")
+#print(pred_df.count())
+#print(pred_df.show())
+
 
 # figure 1
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
 minx = float('inf')
 maxx = 0.0
-quantiles_df = emp_quantiles_pd[[t[0] for t in quantile_labels]]
-# read quantile values from the CSV dataframe
-emp_quantile_values = quantiles_df.loc[condition_idx, :].values.tolist()
 minx = min(minx,*emp_quantile_values)
 maxx = max(maxx,*emp_quantile_values)
 # calculate the prediction quantile values
@@ -181,7 +168,7 @@ ax.legend()
 
 # figure out the title 
 sentence = [
-    f"{label}={emp_quantiles_pd.loc[condition_idx, label]}" 
+    f"{label}={conditions[label]}" 
         for c,label in enumerate(condition_labels)
 ]
 sentence = ','.join(sentence)
@@ -190,7 +177,7 @@ ax.set_title(sentence)
 
 # figure 2
 fig.tight_layout()
-plt.savefig('validation_p29_0.png')
+plt.savefig('validation_p30_0.png')
 
 fig, axes = plt.subplots(nrows=1, ncols=1, figsize=(7,5))
 ax = axes
@@ -223,10 +210,11 @@ sns.histplot(
 
 # figure out the title 
 sentence = [
-    f"{label}={emp_quantiles_pd.loc[condition_idx, label]}" 
+    f"{label}={conditions[label]}" 
         for c,label in enumerate(condition_labels)
 ]
 sentence = ','.join(sentence)
+
 ax.set_xlim(0,list(cond_df.approxQuantile(key_label,[0.9],0))[0])
 ax.set_title(sentence)
 ax.set_xlabel('Latency')
@@ -235,4 +223,4 @@ ax.grid()
 ax.legend()
 
 fig.tight_layout()
-plt.savefig('validation_p29_1.png')
+plt.savefig('validation_p30_1.png')

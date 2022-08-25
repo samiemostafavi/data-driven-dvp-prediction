@@ -91,7 +91,8 @@ logger.info(F'Quantile range list: {qrange_list}')
 project_folder = "projects/tail_benchmark/" 
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
-#project_paths = ['projects/tail_benchmark/p1_results']
+# limit
+project_paths = ['projects/tail_benchmark/p4_results']
 
 for project_path in project_paths:
 
@@ -101,6 +102,9 @@ for project_path in project_paths:
     for f in all_files:
         if f.endswith(".parquet"):
             files.append(records_path + f)
+
+    # limit
+    files = [files[0]]
 
     for idx,pred_records_addr in enumerate(files):
         df=spark.read.parquet(pred_records_addr)

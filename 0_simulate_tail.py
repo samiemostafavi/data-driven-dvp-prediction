@@ -47,7 +47,7 @@ def create_run_graph(params):
     queue = qsimpy.SimpleQueue(
         name='queue',
         service_rp= service,
-        queue_limit=10, #None
+        queue_limit=None, #10, None
     )
     model.add_entity(queue)
 
@@ -165,18 +165,18 @@ if __name__ == "__main__":
 
     # project folder setting
     p = Path(__file__).parents[0]
-    project_path = str(p) + '/projects/tail_benchmark/'
+    project_path = str(p) + '/projects/p1_nolimit_benchmark/'
 
     # simulation parameters
     bench_params = { # tail decays
-        'p4':0.4, 
-        'p3':0.3, 
-        'p2':0.2, 
+        #'p4':0.4, 
+        #'p3':0.3, 
+        #'p2':0.2, 
         'p1':0.1, 
-        'pz':0.0001,
+        #'pz':0.0001,
     }
 
-    sequential_runs = 5 # 10
+    sequential_runs = 1 # 5
     parallel_runs = 18 # 18
     for j in range(sequential_runs):
 

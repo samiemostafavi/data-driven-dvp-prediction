@@ -1,5 +1,21 @@
-import pandas as pd
+from pr3d.de import ConditionalGammaMixtureEVM
+from pathlib import Path
 
-df = pd.read_parquet('projects/tail_benchmark/p2_results/records_predicted/model_6.parquet')
+p = Path(__file__).parents[0]
+predictor_path = str(p) + "/projects/qlen_benchmark/predictors/test.h5"
+print(predictor_path)
 
-print(df)
+predictor = ConditionalGammaMixtureEVM(
+    centers=3,
+    x_dim=['hey','gay'],
+)
+
+predictor._core_model._model.summary()
+
+predictor.save(predictor_path)
+
+del predictor
+
+predictor = ConditionalGammaMixtureEVM(
+    h5_addr=predictor_path,
+)

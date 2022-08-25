@@ -1,6 +1,8 @@
 import numpy as np
 from tensorflow import keras
 import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import rand
 from petastorm import TransformSpec
@@ -38,19 +40,15 @@ tfdtype = tf.float64
 strdtype = 'float64'
 
 # open the dataset
-project_folder = "projects/tail_benchmark/"
+project_folder = "projects/p1_nolimit_benchmark/"
 project_paths = [project_folder+name for name in os.listdir(project_folder) if os.path.isdir(os.path.join(project_folder, name))]
 
 training_params = {
-    'dataset_size': 60*1024*1024,
-    'batch_size': 1024*240,
-    'train_val_split': {
-        'fraction': [0.99, 0.01],
-        'seed': 12345,
-    },
+    'dataset_size': 'all',#60*1024*1024,
+    'batch_size': 1024*128,
     'rounds' : [
-        {'learning_rate': 0.01, 'epochs':10},
-        {'learning_rate': 0.001, 'epochs':20},
+        {'learning_rate': 0.01, 'epochs':20},
+        {'learning_rate': 0.001, 'epochs':10},
     ],
 }
 
@@ -58,16 +56,16 @@ condition_labels = ['queue_length', 'longer_delay_prob']
 y_label = 'end2end_delay'
 
 models_conf = [
-    {
-        'type': 'gmm',
-        'bayesian': False,
-        'ensembles': 1,
-        'centers': 5,
-        'hidden_sizes': (20, 50, 20),
-        'condition_labels' : condition_labels,
-        'y_label' : y_label,
-        'training_params': training_params,
-    },
+    #{
+    #    'type': 'gmm',
+    #    'bayesian': False,
+    #    'ensembles': 1,
+    #    'centers': 5,
+    #    'hidden_sizes': (20, 50, 20),
+    #    'condition_labels' : condition_labels,
+    #    'y_label' : y_label,
+    #    'training_params': training_params,
+    #},
     {
         'type':'gmevm',
         'bayesian':False,
@@ -80,8 +78,9 @@ models_conf = [
     },
 ]
 
+# limit
 #project_paths = [
-#    'projects/tail_benchmark/p1_results',
+#    'projects/tail_benchmark/p4_results',
 #]
 
 for project_path in project_paths:
@@ -100,28 +99,31 @@ for project_path in project_paths:
     # read all files into Spark df
     main_df=spark.read.parquet(*files)
 
+    # Absolutely necessary for randomizing the rows (bug fix)
+    # first shuffle, then sample!
+    main_df = main_df.orderBy(rand())
 
     for model_conf in models_conf:
 
         training_params = model_conf['training_params']
 
-        # take the desired number of records for learning
-        df = main_df.sample(
-            withReplacement=False, 
-            fraction=training_params['dataset_size']/main_df.count(),
-        )
-        df_train, df_val = df.randomSplit(
-            training_params['train_val_split']['fraction'], 
-            seed=training_params['train_val_split']['seed'],
-        )
+        if training_params['dataset_size'] == 'all':
+            df_train = main_df.sample(
+                withReplacement=False, 
+                fraction=1.00,
+            )
+        else:
+            # take the desired number of records for learning
+            df_train = main_df.sample(
+                withReplacement=False, 
+                fraction=training_params['dataset_size']/main_df.count(),
+            )
 
         # dataset partitioning and making the converters
         # Make sure the number of partitions is at least the number of workers which is required for distributed training.
         df_train = df_train.repartition(1)
-        df_val = df_val.repartition(1)
         converter_train = make_spark_converter(df_train)
-        converter_val = make_spark_converter(df_val)
-        logger.info(f"Dataset loaded, train sampels: {len(converter_train)}, validation samples: {len(converter_val)}")
+        logger.info(f"Dataset loaded, train sampels: {len(converter_train)}")
 
         def transform_row(pd_batch):
             """
@@ -184,11 +186,7 @@ for project_path in project_paths:
             with converter_train.make_tf_dataset(
                 transform_spec=transform_spec_fn, 
                 batch_size=batch_size,
-            ) as train_dataset, \
-                converter_val.make_tf_dataset(
-                transform_spec=transform_spec_fn, 
-                batch_size=batch_size,
-            ) as val_dataset:
+            ) as train_dataset:
 
                 # tf.keras only accept tuples, not namedtuples
                 # map the dataset to the desired tf.keras input in _pl_training_model
@@ -201,9 +199,6 @@ for project_path in project_paths:
                 train_dataset = train_dataset.map(map_fn)
                 steps_per_epoch = len(converter_train) // batch_size
 
-                val_dataset = val_dataset.map(map_fn)
-                validation_steps = max(1, len(converter_val) // batch_size)
-
                 for idx, params in enumerate(training_rounds):
                     logger.info(f"Starting training session {idx}/{len(training_rounds)} with {params}")
 
@@ -212,14 +207,12 @@ for project_path in project_paths:
                         loss=model.loss,
                     )
 
-                    logger.info(f"steps_per_epoch: {steps_per_epoch}, validation_steps: {validation_steps}")
+                    logger.info(f"steps_per_epoch: {steps_per_epoch}")
 
                     hist = model._pl_training_model.fit(
                         train_dataset, 
                         steps_per_epoch=steps_per_epoch,
                         epochs=params['epochs'],
-                        validation_data=val_dataset,
-                        validation_steps=validation_steps,
                         verbose=1,
                     )
 
